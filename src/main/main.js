@@ -2,13 +2,14 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, session } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, session, shell } = require('electron');
 const { configureSession, enableVideoTagDebug, isSiteUrl } = require('./session');
 const { createFetcher } = require('./fetcher');
 const { createStore } = require('./store');
 const { parseMe, parseUserList, parseVideoList, parseVideoTags } = require('./parser');
 const { createFeedService } = require('./feed');
 const {
+  CanceledError,
   READ_PLAYER_SOURCES_SCRIPT,
   buildFileName,
   createDownloadQueue,
@@ -29,6 +30,7 @@ const SITE_VIEW_TOP = 88;
 
 let mainWindow;
 let siteView;
+let downloadView;
 let siteAttached = false;
 let siteSession;
 let feedService;
@@ -117,6 +119,28 @@ function createSiteView() {
   siteView.webContents.loadURL(START_URL);
 }
 
+// ダウンロードの動画 URL 確認専用の裏ページ（DESIGN 4.9）。画面には一切出さない。
+// サイト表示と同じセッション・同じ安全設定で、動画ページを開いてプレイヤーの URL を読むだけに使う。
+function createDownloadView() {
+  downloadView = new WebContentsView({
+    webPreferences: {
+      session: siteSession,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  downloadView.webContents.setAudioMuted(true);
+  downloadView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  downloadView.webContents.on('will-navigate', (event, url) => {
+    if (!isSiteUrl(url)) event.preventDefault();
+  });
+  downloadView.webContents.on('will-redirect', (event, url) => {
+    if (!isSiteUrl(url)) event.preventDefault();
+  });
+  downloadView.webContents.loadURL('about:blank');
+}
+
 // ウィンドウ上部のメニューを日本語の最小メニューに置き換える（5 章、2026-09-29）。
 function buildAppMenu() {
   const template = [
@@ -181,6 +205,7 @@ function createWindow() {
   });
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   createSiteView();
+  createDownloadView();
   showSiteView();
 }
 
@@ -203,9 +228,9 @@ function sendDownloadStatus(status) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download:status', status);
 }
 
-// サイト表示で動画ページを開き、読み込みが終わるまで待つ。
+// 裏ページ（downloadView）で動画ページを開き、読み込みが終わるまで待つ。
 function openVideoPage(id) {
-  const contents = siteView.webContents;
+  const contents = downloadView.webContents;
   if (videoIdFromUrl(contents.getURL()) === id && !contents.isLoading()) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const cleanup = () => {
@@ -227,13 +252,15 @@ function openVideoPage(id) {
   });
 }
 
-// プレイヤーの <video>／<source> が実際に使う URL を読む。推測の URL は作らない。
-async function resolveVideoUrl(job) {
-  if (!siteView) throw new Error('サイト表示がありません');
+// プレイヤーの <video>／<source> が実際に使う URL を、画面に出さない裏ページで読む。推測の URL は作らない。
+// 「動画ページから移動したため中止」の判定は、この裏ページについてのみ行う（サイト表示は動かさない）。
+async function resolveVideoUrlOnHiddenPage(job) {
+  if (!downloadView) throw new Error('裏ページがありません');
   await openVideoPage(job.id);
-  const contents = siteView.webContents;
+  const contents = downloadView.webContents;
   const until = Date.now() + PLAYER_WAIT_MS;
   while (Date.now() < until) {
+    if (job.controller.signal.aborted) throw new CanceledError();
     if (videoIdFromUrl(contents.getURL()) !== job.id) throw new Error('動画ページから移動したため中止しました');
     const candidates = await contents.executeJavaScript(READ_PLAYER_SOURCES_SCRIPT, false).catch(() => []);
     const found = pickVideoUrl(candidates);
@@ -243,15 +270,26 @@ async function resolveVideoUrl(job) {
   throw new Error('動画の URL を取得できませんでした（再生できない動画の可能性があります）');
 }
 
+// URL の確認が終わったら（成功でも失敗でも）裏ページを about:blank に戻す。
+async function resolveVideoUrl(job) {
+  try {
+    return await resolveVideoUrlOnHiddenPage(job);
+  } finally {
+    if (downloadView) downloadView.webContents.loadURL('about:blank').catch(() => {});
+  }
+}
+
 // ログイン済みのセッション（persist:tm）のまま保存する。
 // ses.downloadURL は失敗の理由が分からないため、ses.fetch（同じ session の Cookie を使う）で取得し、
 // 応答を確認してから自分でファイルに書き込む。
 async function saveVideo(job, found, onProgress) {
-  const ses = siteView.webContents.session;
+  const ses = siteSession;
+  const signal = job.controller.signal;
   let response;
   try {
-    response = await ses.fetch(found.url, { headers: { Referer: videoPageUrl(job.id) } });
+    response = await ses.fetch(found.url, { headers: { Referer: videoPageUrl(job.id) }, signal });
   } catch {
+    if (signal.aborted) throw new CanceledError();
     throw new Error('保存を始められませんでした');
   }
 
@@ -282,6 +320,7 @@ async function saveVideo(job, found, onProgress) {
   try {
     const reader = response.body.getReader();
     for (;;) {
+      if (signal.aborted) throw new CanceledError();
       const { done, value } = await reader.read();
       if (done) break;
       const chunk = Buffer.from(value);
@@ -292,14 +331,16 @@ async function saveVideo(job, found, onProgress) {
       onProgress(total > 0 ? (received / total) * 100 : null);
     }
     await new Promise((resolve, reject) => fileStream.end(error => (error ? reject(error) : resolve())));
-  } catch {
+  } catch (error) {
     fileStream.destroy();
+    // 中止のときも .part を消す（DESIGN 4.9）。
     try { fs.unlinkSync(tmpPath); } catch { /* 無視 */ }
+    if (error instanceof CanceledError || signal.aborted) throw new CanceledError();
     throw new Error('保存に失敗しました');
   }
 
   fs.renameSync(tmpPath, savePath);
-  return { fileName: path.basename(savePath) };
+  return { fileName: path.basename(savePath), filePath: savePath };
 }
 
 // ファイル名に使う独自の名前（DESIGN 4.8）と元のタイトル。
@@ -326,6 +367,15 @@ ipcMain.handle('download:add', (_event, id) => addDownload(Number(id)));
 ipcMain.handle('download:current', () => {
   const id = siteView ? videoIdFromUrl(siteView.webContents.getURL()) : null;
   return id ? addDownload(id) : { ok: false, message: '動画ページを開いてください' };
+});
+ipcMain.handle('download:cancel', (_event, id) => downloadQueue.cancel(Number(id)));
+ipcMain.handle('download:retry', (_event, id) => downloadQueue.retry(Number(id)));
+ipcMain.handle('download:list', () => downloadQueue.list());
+ipcMain.handle('download:show', (_event, id) => {
+  const entry = downloadQueue.list().find(x => x.id === Number(id));
+  if (!entry?.filePath) return false;
+  shell.showItemInFolder(entry.filePath);
+  return true;
 });
 ipcMain.handle('download:dir', () => downloadDir());
 ipcMain.handle('download:choose-dir', async () => {

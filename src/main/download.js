@@ -26,6 +26,14 @@ function validId(value) {
   return Number.isSafeInteger(value) && value > 0;
 }
 
+// 「中止」によって止まったことを表す（失敗とは区別する）。
+class CanceledError extends Error {
+  constructor(message = '中止しました') {
+    super(message);
+    this.name = 'CanceledError';
+  }
+}
+
 function videoPageUrl(id) {
   if (!validId(id)) throw new TypeError('動画IDが必要です');
   return `${SITE_ORIGIN}/video/${id}`;
@@ -144,36 +152,48 @@ function uniqueFilePath(dir, fileName, exists) {
 }
 
 // 1 本ずつ順に保存するキュー。resolveUrl と save は main（Electron）側から渡す。
-// 状態の変化は onUpdate に { id, name, state, percent, message, fileName } で知らせる。
+// 状態の変化は onUpdate に { id, name, state, percent, message, fileName, filePath } で知らせる。
 // state: queued / resolving / downloading / done / failed
+// resolveUrl(job) / save(job, found, onProgress) の job には controller（AbortController）が入る。
+// 中止（cancel）はこの controller を abort するだけで、判定・後始末（fetch の中断・.part の削除）は
+// 呼び出し側（main.js）と、ここでの CanceledError の扱いで行う。
 function createDownloadQueue({ resolveUrl, save, onUpdate = () => {} }) {
   if (typeof resolveUrl !== 'function' || typeof save !== 'function') {
     throw new TypeError('resolveUrl と save が必要です');
   }
   const waiting = [];
+  // 完了・失敗した分も、一覧に出すためにアプリを閉じるまで保持する（中止した分は消す）。
+  const jobs = new Map();
   let active = null;
   let loop = null;
+  let seq = 0;
 
-  const notify = (job, fields) => {
-    Object.assign(job.status, fields);
-    try { onUpdate({ ...job.status }); } catch { /* 表示の失敗で保存は止めない */ }
+  const notify = (entry, fields) => {
+    Object.assign(entry.status, fields);
+    try { onUpdate({ ...entry.status }); } catch { /* 表示の失敗で保存は止めない */ }
   };
 
   async function run() {
     while (waiting.length > 0) {
       active = waiting.shift();
-      const job = active;
+      const entry = active;
       try {
-        notify(job, { state: 'resolving', percent: null, message: '動画の URL を確認中' });
-        const found = await resolveUrl(job);
+        notify(entry, { state: 'resolving', percent: null, message: '動画の URL を確認中' });
+        const found = await resolveUrl(entry);
+        if (entry.controller.signal.aborted) throw new CanceledError();
         if (!found?.url) throw new Error('動画の URL を取得できませんでした');
-        notify(job, { state: 'downloading', percent: 0, message: found.hd ? '保存中（HD）' : '保存中' });
-        const result = await save(job, found, percent => {
-          notify(job, { percent: Number.isFinite(percent) ? Math.max(0, Math.min(100, Math.floor(percent))) : null });
+        notify(entry, { state: 'downloading', percent: 0, message: found.hd ? '保存中（HD）' : '保存中' });
+        const result = await save(entry, found, percent => {
+          notify(entry, { percent: Number.isFinite(percent) ? Math.max(0, Math.min(100, Math.floor(percent))) : null });
         });
-        notify(job, { state: 'done', percent: 100, message: '完了', fileName: result?.fileName || null });
+        notify(entry, { state: 'done', percent: 100, message: '完了', fileName: result?.fileName || null, filePath: result?.filePath || null });
       } catch (error) {
-        notify(job, { state: 'failed', percent: null, message: error?.message || '保存できませんでした' });
+        if (error instanceof CanceledError || entry.controller.signal.aborted) {
+          jobs.delete(entry.id);
+          notify(entry, { state: 'canceled', percent: null, message: '中止しました' });
+        } else {
+          notify(entry, { state: 'failed', percent: null, message: error?.message || '保存できませんでした' });
+        }
       }
       active = null;
     }
@@ -195,11 +215,52 @@ function createDownloadQueue({ resolveUrl, save, onUpdate = () => {} }) {
     add(job) {
       if (!validId(job?.id)) throw new TypeError('動画IDが必要です');
       if (active?.id === job.id || waiting.some(item => item.id === job.id)) return false;
-      const entry = { ...job, status: { id: job.id, name: job.name || null, state: 'queued', percent: null, message: '待機中', fileName: null } };
+      seq += 1;
+      const entry = {
+        id: job.id,
+        name: job.name || null,
+        title: job.title || null,
+        order: seq,
+        controller: new AbortController(),
+        status: { id: job.id, name: job.name || null, state: 'queued', percent: null, message: '待機中', fileName: null, filePath: null }
+      };
+      jobs.set(job.id, entry);
       waiting.push(entry);
       notify(entry, {});
       kick();
       return true;
+    },
+    // 待機中の動画は一覧から外す。保存中（確認中を含む）の動画は abort し、
+    // run() 側で CanceledError として拾って中止として知らせる。
+    cancel(id) {
+      const entry = jobs.get(id);
+      if (!entry) return false;
+      if (active === entry) {
+        entry.controller.abort();
+        return true;
+      }
+      const index = waiting.indexOf(entry);
+      if (index === -1) return false;
+      waiting.splice(index, 1);
+      jobs.delete(id);
+      notify(entry, { state: 'canceled', percent: null, message: '中止しました' });
+      return true;
+    },
+    // 失敗した動画を、同じ内容でもう一度キューに入れる。
+    retry(id) {
+      const entry = jobs.get(id);
+      if (!entry || entry.status.state !== 'failed') return false;
+      seq += 1;
+      entry.order = seq;
+      entry.controller = new AbortController();
+      waiting.push(entry);
+      notify(entry, { state: 'queued', percent: null, message: '待機中', fileName: null, filePath: null });
+      kick();
+      return true;
+    },
+    // ダウンロード タブに出す一覧。新しいものが上。
+    list() {
+      return [...jobs.values()].sort((a, b) => b.order - a.order).map(entry => ({ ...entry.status }));
     },
     get pending() {
       return waiting.map(job => job.id);
@@ -215,6 +276,7 @@ function createDownloadQueue({ resolveUrl, save, onUpdate = () => {} }) {
 }
 
 module.exports = {
+  CanceledError,
   READ_PLAYER_SOURCES_SCRIPT,
   buildFileName,
   createDownloadQueue,

@@ -88,6 +88,12 @@ section { height: 100%; }
 #people .person-pick { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .person-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .pager { display: flex; gap: 4px; margin: 12px 0; }
+#downloads { overflow: auto; padding: 18px; }
+#downloads-list { display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+.download-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid #2e3340; border-radius: 6px; background: #1d2027; }
+.download-row strong { flex: none; max-width: 16em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.download-row span { flex: 1; min-width: 0; color: #9eabc0; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.download-row button { flex: none; padding: 4px 10px; border: 1px solid #3a4151; border-radius: 4px; background: #242833; }
 .visually-hidden {
   position: absolute;
   width: 1px;

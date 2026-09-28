@@ -40,6 +40,10 @@ contextBridge.exposeInMainWorld('tmViewer', {
   download: {
     add: id => ipcRenderer.invoke('download:add', id),
     current: () => ipcRenderer.invoke('download:current'),
+    cancel: id => ipcRenderer.invoke('download:cancel', id),
+    retry: id => ipcRenderer.invoke('download:retry', id),
+    list: () => ipcRenderer.invoke('download:list'),
+    showInFolder: id => ipcRenderer.invoke('download:show', id),
     dir: () => ipcRenderer.invoke('download:dir'),
     chooseDir: () => ipcRenderer.invoke('download:choose-dir'),
     onStatus: callback => {

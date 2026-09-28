@@ -10,9 +10,13 @@ const forward = $('forward');
 function opts() { return { includeSubscriptions: state.includeSubscriptions, viewableOnly: state.viewableOnly, selectedUser: state.selectedUser, page: state.page }; }
 function isCurrent(requestId) { return requestId === state.requestId; }
 function setView(name) {
-  const show = name === 'site'; $('feed').hidden = show; $('site').hidden = !show;
+  const show = name === 'site';
+  $('feed').hidden = name !== 'feed'; $('site').hidden = !show; $('downloads').hidden = name !== 'downloads';
   document.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('active', x.dataset.view === name));
-  site.command(show ? 'show' : 'hide'); if (show) bounds(); else void draw(true);
+  site.command(show ? 'show' : 'hide');
+  if (show) bounds();
+  else if (name === 'feed') void draw(true);
+  else if (name === 'downloads') renderDownloadsTab();
 }
 function bounds() { const r = $('site-area').getBoundingClientRect(); site.setBounds({ width: r.width, height: r.height }); }
 function pager(id, current, pages) {
@@ -74,23 +78,81 @@ function videoCard(video) {
   return wrap;
 }
 // ダウンロードの進み具合。保存は 1 本ずつなので、最新の状態と待ちの本数を出す。
+// ダウンロード タブ用に、動画ごとの最新状態を新しいものが上になる順で持つ（DESIGN 4.9）。
 const downloads = new Map();
+const downloadOrder = [];
 function showDownloadText(text) { document.querySelectorAll('.download-status').forEach(x => { x.textContent = text; }); }
 async function addDownload(request) {
   const result = await request.catch(() => null);
   if (!result?.ok) showDownloadText(result?.message || 'ダウンロードを始められませんでした');
 }
+function bumpDownloadOrder(id) {
+  const index = downloadOrder.indexOf(id);
+  if (index !== -1) downloadOrder.splice(index, 1);
+  downloadOrder.unshift(id);
+}
+function updateDownloadsTabLabel() {
+  const button = document.querySelector('[data-view="downloads"]');
+  if (!button) return;
+  const active = [...downloads.values()].filter(x => x.state === 'downloading').length;
+  button.textContent = active > 0 ? `ダウンロード (${active})` : 'ダウンロード';
+}
+function downloadRowLabel(status) {
+  if (status.state === 'downloading' && Number.isInteger(status.percent)) return `${status.message || '保存中'} ${status.percent}%`;
+  if (status.state === 'failed') return `失敗: ${status.message || '保存できませんでした'}`;
+  return status.message || '';
+}
+function downloadRow(status) {
+  const row = document.createElement('div'); row.className = 'download-row';
+  const name = document.createElement('strong'); name.textContent = status.name || status.fileName || `動画 ${status.id}`;
+  const info = document.createElement('span'); info.textContent = downloadRowLabel(status);
+  row.append(name, info);
+  if (status.state === 'queued' || status.state === 'resolving' || status.state === 'downloading') {
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '中止';
+    cancel.onclick = () => void download.cancel(status.id);
+    row.append(cancel);
+  } else if (status.state === 'failed') {
+    const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = 'やり直す';
+    retry.onclick = () => void download.retry(status.id);
+    row.append(retry);
+  } else if (status.state === 'done') {
+    const open = document.createElement('button'); open.type = 'button'; open.textContent = 'フォルダを開く';
+    open.onclick = () => void download.showInFolder(status.id);
+    row.append(open);
+  }
+  return row;
+}
+function renderDownloadsTab() {
+  const box = $('downloads-list'); if (!box) return;
+  box.textContent = '';
+  const ids = downloadOrder.filter(id => downloads.has(id));
+  if (ids.length === 0) { box.textContent = 'ダウンロードはまだありません。'; return; }
+  ids.forEach(id => box.append(downloadRow(downloads.get(id))));
+}
 download.onStatus(status => {
   if (!status || !Number.isInteger(status.id)) return;
-  downloads.set(status.id, status);
+  const previous = downloads.get(status.id);
+  if (status.state === 'canceled') { downloads.delete(status.id); const i = downloadOrder.indexOf(status.id); if (i !== -1) downloadOrder.splice(i, 1); }
+  else {
+    downloads.set(status.id, status);
+    if (!previous || status.state === 'queued') bumpDownloadOrder(status.id);
+  }
   const waiting = [...downloads.values()].filter(x => x.state === 'queued').length;
   const label = status.name || `動画 ${status.id}`;
   const percent = Number.isInteger(status.percent) && status.state === 'downloading' ? ` ${status.percent}%` : '';
   const text = status.state === 'done' ? `完了: ${status.fileName || label}`
     : status.state === 'failed' ? `失敗: ${label}（${status.message || '保存できませんでした'}）`
+    : status.state === 'canceled' ? `中止: ${label}`
     : `${status.message || ''}${percent}: ${label}`;
   showDownloadText(waiting > 0 ? `${text}（あと ${waiting} 本）` : text);
+  updateDownloadsTabLabel();
+  if (!$('downloads').hidden) renderDownloadsTab();
 });
+(async () => {
+  const list = await download.list().catch(() => []);
+  list.forEach(status => { downloads.set(status.id, status); downloadOrder.push(status.id); });
+  updateDownloadsTabLabel();
+})();
 function showTags(box, values) {
   const list = Array.isArray(values) ? values : []; box.textContent = list.join(' ・ '); box.title = list.join(' ・ ');
 }

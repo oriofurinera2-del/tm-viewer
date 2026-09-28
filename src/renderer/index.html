@@ -12,6 +12,7 @@
     <nav aria-label="画面">
       <button type="button" data-view="feed">フィード</button>
       <button type="button" data-view="site" class="active">サイト表示</button>
+      <button type="button" data-view="downloads">ダウンロード</button>
     </nav>
   </header>
 
@@ -52,6 +53,10 @@
         <span>広告遮断中</span>
       </div>
       <div id="site-area" aria-label="TOKYO Motion のサイト表示"></div>
+    </section>
+
+    <section id="downloads" hidden>
+      <div id="downloads-list"></div>
     </section>
   </main>
   <script src="renderer.js"></script>

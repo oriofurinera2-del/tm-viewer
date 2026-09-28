@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {
+  CanceledError,
   READ_PLAYER_SOURCES_SCRIPT,
   buildFileName,
   createDownloadQueue,
@@ -158,4 +159,79 @@ test('保存の失敗と、終わった後に足した動画も扱う', async ()
   assert.equal(updates.find(x => x.id === 1 && x.state === 'failed').message, '保存に失敗しました');
   assert.equal(updates.at(-1).state, 'done');
   assert.throws(() => queue.add({ id: 'x' }));
+});
+
+test('待機中の動画は中止すると一覧から消える', async () => {
+  const updates = [];
+  let resolveGate;
+  const gate = new Promise(resolve => { resolveGate = resolve; });
+  const queue = createDownloadQueue({
+    resolveUrl: async () => { await gate; return { url: 'https://www.tokyomotion.net/vsrc/sd/1' }; },
+    save: async () => ({ fileName: '1.mp4' }),
+    onUpdate: status => updates.push(status)
+  });
+
+  queue.add({ id: 1 }); // 保存中（gate で待たせる）
+  queue.add({ id: 2 }); // 待機中のまま中止する
+  assert.deepEqual(queue.pending, [2]);
+  assert.equal(queue.cancel(2), true);
+  assert.deepEqual(queue.pending, []);
+  assert.deepEqual(queue.list().map(x => x.id), [1]);
+  assert.equal(updates.find(x => x.id === 2 && x.state === 'canceled').message, '中止しました');
+
+  resolveGate();
+  await queue.idle();
+  assert.equal(queue.cancel(2), false);
+});
+
+test('保存中の中止は resolveUrl/save の signal を abort し、canceled として知らせる', async () => {
+  const updates = [];
+  let sawAbort = false;
+  let startedResolving;
+  const started = new Promise(resolve => { startedResolving = resolve; });
+  const queue = createDownloadQueue({
+    resolveUrl: async job => {
+      startedResolving();
+      await new Promise(resolve => job.controller.signal.addEventListener('abort', resolve, { once: true }));
+      sawAbort = job.controller.signal.aborted;
+      throw new CanceledError();
+    },
+    save: async () => { throw new Error('呼ばれないはず'); },
+    onUpdate: status => updates.push(status)
+  });
+
+  queue.add({ id: 1 });
+  await started;
+  assert.equal(queue.active, 1);
+  assert.equal(queue.cancel(1), true);
+  await queue.idle();
+
+  assert.equal(sawAbort, true);
+  assert.equal(updates.at(-1).state, 'canceled');
+  assert.deepEqual(queue.list(), []);
+});
+
+test('失敗した動画はやり直すと待機中に戻り、新しい順で一覧に出る', async () => {
+  let attempt = 0;
+  const queue = createDownloadQueue({
+    resolveUrl: async () => {
+      attempt += 1;
+      if (attempt === 1) throw new Error('だめでした');
+      return { url: 'https://www.tokyomotion.net/vsrc/sd/1' };
+    },
+    save: async () => ({ fileName: '1.mp4' })
+  });
+
+  queue.add({ id: 1, name: 'テスト' });
+  queue.add({ id: 2, name: '2本目' });
+  await queue.idle();
+
+  assert.equal(queue.list().find(x => x.id === 1).state, 'failed');
+  assert.equal(queue.retry(2), false); // 失敗していない動画はやり直せない
+  assert.equal(queue.retry(1), true);
+  assert.equal(queue.list()[0].id, 1); // 新しい順で先頭に来る
+  await queue.idle();
+
+  assert.equal(queue.list().find(x => x.id === 1).state, 'done');
+  assert.equal(queue.retry(999), false);
 });
