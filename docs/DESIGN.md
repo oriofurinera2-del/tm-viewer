@@ -141,7 +141,10 @@ renderer（アプリ画面）
 
 ### 4.5 広告・勝手な移動の防止
 
-- 既知の広告ドメイン（確認済み: juicyads / realsrv / magsrv など）への通信を遮断する。リストは JSON で差し替え可能にする。
+- **許可リスト方式**（2026-09-29 ユーザー決定。旧: 広告ドメインを遮断リストに足す方式は廃止。広告が名前のランダムな配信元に切り替わり追いつかなかったため、8 章）: サイト表示の通信は、許可リストのドメインだけ通し、それ以外はすべて止める。
+  - 初期の許可リスト: `tokyomotion.net` とそのサブドメイン（`www44` など動画配信を含む）、`tokyo-motion.net` とそのサブドメイン（`cdn.`）、`cdn.fluidplayer.com`、`bootstrapcdn.com` のサブドメイン、`fonts.googleapis.com`、`fonts.gstatic.com`、`ajax.googleapis.com`。
+  - リストは JSON で差し替え可能にする。開発時の記録（`--debug-hosts`）で止めたドメインが分かるので、サイトの機能が壊れたらそこから足す。
+  - `live.tokyomotion.net` もサブドメインとして通るが、画面の遷移は 4.5 の遷移制限に従う。
 - サイト表示ビューでは `tokyomotion.net` 以外への遷移と `window.open` を拒否する。
 
 ### 4.6 視聴済み
