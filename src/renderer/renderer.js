@@ -37,9 +37,25 @@ function postedLabel(video) {
   const d = new Date(video.postedAtEst); const pad = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} 頃`;
 }
+// サムネの切り替え（4.8・8 章）: 末尾 `/<番号>.jpg` の番号だけを差し替える。合わない形のサムネは何もしない。
+const THUMB_URL_RE = /^(.*\/)(\d+)(\.jpg)$/i;
+const THUMB_DEFAULT_COUNT = 20;
+function attachThumbRotation(card, image, video) {
+  const match = THUMB_URL_RE.exec(video.thumb || '');
+  if (!match) return;
+  const prefix = match[1]; const suffix = match[3];
+  const count = Number.isInteger(video.frameCount) && video.frameCount > 1 ? video.frameCount : THUMB_DEFAULT_COUNT;
+  let timer = null; let n = 1;
+  const show = () => { image.src = `${prefix}${n}${suffix}`; };
+  const step = () => { n = n >= count ? 1 : n + 1; show(); };
+  image.addEventListener('error', () => { if (timer) step(); }); // 読み込めなかった画像は飛ばす
+  card.addEventListener('mouseenter', () => { if (timer) return; step(); timer = setInterval(step, 500); });
+  card.addEventListener('mouseleave', () => { clearInterval(timer); timer = null; n = 1; show(); });
+}
 function videoCard(video) {
   const b = document.createElement('button'); b.className = `video-card${video.watched ? ' watched' : ''}`;
   const image = document.createElement('img'); image.alt = ''; image.src = video.thumb || '';
+  attachThumbRotation(b, image, video);
   const title = document.createElement('strong'); title.textContent = video.title || '無題の動画';
   const info = document.createElement('span'); info.className = 'card-user';
   const name = document.createElement('span'); name.className = 'card-user-name'; name.textContent = `${video.user} ・ ${video.duration || ''}`;

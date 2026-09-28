@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, WebContentsView, dialog, ipcMain, session } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, session } = require('electron');
 const { configureSession, enableVideoTagDebug, isSiteUrl } = require('./session');
 const { createFetcher } = require('./fetcher');
 const { createStore } = require('./store');
@@ -113,6 +113,46 @@ function createSiteView() {
   siteView.webContents.on('did-navigate-in-page', sendSiteState);
   if (DEBUG_HOSTS) enableVideoTagDebug(siteView.webContents);
   siteView.webContents.loadURL(START_URL);
+}
+
+// ウィンドウ上部のメニューを日本語の最小メニューに置き換える（5 章、2026-09-29）。
+function buildAppMenu() {
+  const template = [
+    { label: 'ファイル', submenu: [{ role: 'quit', label: '終了' }] },
+    {
+      label: '編集',
+      submenu: [
+        { role: 'undo', label: '元に戻す' },
+        { role: 'redo', label: 'やり直し' },
+        { type: 'separator' },
+        { role: 'cut', label: '切り取り' },
+        { role: 'copy', label: 'コピー' },
+        { role: 'paste', label: '貼り付け' },
+        { role: 'selectAll', label: 'すべて選択' }
+      ]
+    },
+    {
+      label: '表示',
+      submenu: [
+        { role: 'reload', label: '再読み込み' },
+        { type: 'separator' },
+        { role: 'zoomIn', label: '拡大' },
+        { role: 'zoomOut', label: '縮小' },
+        { role: 'resetZoom', label: '実寸' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: '全画面' },
+        ...(!app.isPackaged ? [{ type: 'separator' }, { role: 'toggleDevTools', label: '開発者ツール' }] : [])
+      ]
+    },
+    {
+      label: 'ウィンドウ',
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        { role: 'close', label: '閉じる' }
+      ]
+    }
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function createWindow() {
@@ -354,6 +394,7 @@ ipcMain.handle('feed:mute', (_event, user, muted) => {
 ipcMain.on('site:bounds', (_event, bounds) => resizeSiteView(bounds));
 
 app.whenReady().then(() => {
+  buildAppMenu();
   feedFetcher = createFeedServices();
   createWindow();
 });
