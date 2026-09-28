@@ -51,4 +51,11 @@ $('viewable-only').onchange = e => { state.viewableOnly = e.target.checked; stat
 $('include-subscriptions').onchange = e => { state.includeSubscriptions = e.target.checked; state.selectedUser = null; state.page = 1; draw(); };
 $('person-search').oninput = e => { state.search = e.target.value.trim().toLowerCase(); people(); };
 site.onState(x => { if (x.url) $('address').value = x.url; back.disabled = !x.canGoBack; forward.disabled = !x.canGoForward; });
+feed.onProgress(progress => {
+  const done = Number(progress?.done);
+  const total = Number(progress?.total);
+  if (Number.isInteger(done) && done >= 0 && Number.isInteger(total) && total >= 0) {
+    $('feed-progress').textContent = `取得中 ${done}/${total}`;
+  }
+});
 new ResizeObserver(bounds).observe($('site-area')); bounds();

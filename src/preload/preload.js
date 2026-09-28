@@ -14,6 +14,11 @@ contextBridge.exposeInMainWorld('tmViewer', {
   },
   feed: {
     refresh: options => ipcRenderer.invoke('feed:refresh', options),
+    onProgress: callback => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on('feed:progress', listener);
+      return () => ipcRenderer.removeListener('feed:progress', listener);
+    },
     open: options => ipcRenderer.invoke('feed:open', options),
     get: options => ipcRenderer.invoke('feed:get', options),
     people: options => ipcRenderer.invoke('feed:people', options),

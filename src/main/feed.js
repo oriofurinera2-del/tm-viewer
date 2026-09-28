@@ -152,6 +152,7 @@ class FeedService {
         user,
         kind: friendSet.has(user) ? 'friend' : 'subscription'
       }));
+      if (typeof onProgress === 'function') onProgress({ done: 0, total: users.length });
       for (let index = 0; index < users.length; index += 1) {
         const { user, kind } = users[index];
         const fetched = await this.fetcher.fetchUserVideos(user);
@@ -162,7 +163,10 @@ class FeedService {
           .sort((a, b) => b.id - a.id)
           .slice(0, this.sitePageSize)
           .map(video => video.id));
-        const hasNewFirstPageVideo = asArray(fetched?.videos).some(video => !oldFirstPageIds.has(video?.id));
+        // キャッシュには個人の古いページも含まれる。キャッシュ全体を最新の
+        // 1 ページ目として比べると、古い ID を新着と誤認してページ境界を消してしまう。
+        const hasNewFirstPageVideo = !fetched?.fromCache
+          && asArray(fetched?.videos).some(video => !oldFirstPageIds.has(video?.id));
         const videos = mergeCachedPages(
           previous,
           mergeVideos(previous, fetched?.videos, user, kind, fetchedAt)

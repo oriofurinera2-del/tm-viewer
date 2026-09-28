@@ -8,6 +8,7 @@ const {
   userListUrl,
   userVideosUrl
 } = require('../src/main/feed');
+const { createFetcher } = require('../src/main/fetcher');
 
 function memoryStore({ feedCache = {}, state = {} } = {}) {
   let cache = feedCache;
@@ -75,6 +76,7 @@ test('更新はフレンド全ページと購読一覧を読み、1人につき�
     userVideosUrl('friend-a'), userVideosUrl('friend-b'), userVideosUrl('sub-a')
   ]);
   assert.deepEqual(progress, [
+    { done: 0, total: 3 },
     { done: 1, total: 3, user: 'friend-a' },
     { done: 2, total: 3, user: 'friend-b' },
     { done: 3, total: 3, user: 'sub-a' }
@@ -82,6 +84,43 @@ test('更新はフレンド全ページと購読一覧を読み、1人につき�
   assert.equal(h.store.cache()['friend-a'].videos[0].kind, 'friend');
   assert.equal(h.store.cache()['sub-a'].videos[0].kind, 'subscription');
   assert.equal(h.store.state().me, me);
+});
+
+test('30分以内の更新はキャッシュの古いページを新着と誤認せず、動画を再取得しない', async () => {
+  const me = 'me';
+  const user = 'friend-a';
+  const store = memoryStore({
+    feedCache: {
+      [user]: {
+        fetchedAt: 999,
+        fetchedSitePages: [1, 2],
+        videos: [
+          { id: 30, user, kind: 'friend', private: false, firstSeenAt: 1 },
+          { id: 20, user, kind: 'friend', private: false, firstSeenAt: 1 },
+          { id: 10, user, kind: 'friend', private: false, firstSeenAt: 1 }
+        ]
+      }
+    }
+  });
+  const calls = [];
+  const parse = body => JSON.parse(body);
+  const fetcher = createFetcher({
+    request: async url => {
+      calls.push(url);
+      if (url === userListUrl(me, 'friends')) return { status: 200, body: JSON.stringify({ users: [user], lastPage: 1 }) };
+      throw new Error(`動画を再取得しました: ${url}`);
+    },
+    parseVideoList: parse,
+    store,
+    intervalMs: 0,
+    now: () => 1_000
+  });
+  const service = createFeedService({ fetcher, store, parseUserList: parse, parseVideoList: parse, now: () => 1_000, sitePageSize: 2 });
+
+  await service.refresh({ me, includeSubscriptions: false });
+
+  assert.deepEqual(calls, [userListUrl(me, 'friends')]);
+  assert.deepEqual(store.cache()[user].fetchedSitePages, [1, 2]);
 });
 
 test('全体フィードは ID の新しい順で、ミュートと見られる動画だけを反映する', () => {

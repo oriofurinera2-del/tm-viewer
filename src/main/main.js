@@ -146,7 +146,11 @@ ipcMain.handle('feed:refresh', async (_event, options) => {
   const response = await feedFetcher.fetch(START_URL);
   const me = parseMe(response.body);
   if (!me) return { ok: false, message: 'サイトにログインしてから更新してください。' };
-  const result = await feedService.refresh({ me, includeSubscriptions: options?.includeSubscriptions !== false });
+  const result = await feedService.refresh({
+    me,
+    includeSubscriptions: options?.includeSubscriptions !== false,
+    onProgress: ({ done, total }) => _event.sender.send('feed:progress', { done, total })
+  });
   return { ok: !result.stopped, ...result };
 });
 
