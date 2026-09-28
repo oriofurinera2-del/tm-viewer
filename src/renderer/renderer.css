@@ -67,6 +67,10 @@ section { height: 100%; }
 #feed-progress { color: #9eabc0; min-width: 7em; }
 #feed-title { font-size: 18px; margin: 18px 0 10px; }
 #feed-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px; min-height: 80px; }
+.card-wrap { position: relative; min-width: 0; }
+.card-wrap .video-card { width: 100%; }
+.card-download { position: absolute; top: 6px; right: 6px; padding: 2px 8px; border: 1px solid #3a4151; border-radius: 4px; background: rgba(22, 24, 29, .85); font-size: 12px; }
+.download-status { color: #9eabc0; font-size: 12px; max-width: 28em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .video-card { min-width: 0; padding: 0; overflow: hidden; text-align: left; border: 1px solid #353b49; border-radius: 6px; background: #20242d; }
 .video-card.watched { opacity: .55; }
 .video-card img { display: block; width: 100%; height: 115px; object-fit: cover; background: #303746; }

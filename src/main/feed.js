@@ -6,6 +6,8 @@
 const SITE_ORIGIN = 'https://www.tokyomotion.net';
 const APP_PAGE_SIZE = 100;
 const SITE_PAGE_SIZE = 18;
+// 1 回の更新で裏で取るサイトのタグの上限（DESIGN 4.2）。残りはカーソル時の取得に任せる。
+const NEW_TAG_LIMIT = 100;
 
 function userListUrl(me, kind, page = 1) {
   const name = encodeURIComponent(me);
@@ -358,12 +360,14 @@ class FeedService {
     return pending;
   }
 
-  // 更新後に、NEW の動画のタグを新しい順に 1 本ずつ裏で取る。次の更新が始まったら止める。
-  async fetchNewSiteTags({ onTags } = {}) {
+  // 更新後に、NEW の動画のタグを新しい順に 1 本ずつ裏で取る（1 回につき limit 本まで）。
+  // 次の更新が始まったら止める。
+  async fetchNewSiteTags({ onTags, limit = NEW_TAG_LIMIT } = {}) {
     const run = ++this.tagRun;
     const state = this.state();
     const targets = this.videos()
       .filter(video => isNew(video, state) && !hasSiteTags(video))
+      .slice(0, Math.max(0, Number(limit) || 0))
       .map(video => video.id);
     let done = 0;
     for (const id of targets) {
@@ -459,6 +463,7 @@ function createFeedService(options) {
 
 module.exports = {
   APP_PAGE_SIZE,
+  NEW_TAG_LIMIT,
   SITE_PAGE_SIZE,
   FeedService,
   createFeedService,

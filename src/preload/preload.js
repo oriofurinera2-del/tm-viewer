@@ -36,5 +36,16 @@ contextBridge.exposeInMainWorld('tmViewer', {
     },
     watch: (id, watched) => ipcRenderer.invoke('feed:watch', id, watched),
     mute: (user, muted) => ipcRenderer.invoke('feed:mute', user, muted)
+  },
+  download: {
+    add: id => ipcRenderer.invoke('download:add', id),
+    current: () => ipcRenderer.invoke('download:current'),
+    dir: () => ipcRenderer.invoke('download:dir'),
+    chooseDir: () => ipcRenderer.invoke('download:choose-dir'),
+    onStatus: callback => {
+      const listener = (_event, status) => callback(status);
+      ipcRenderer.on('download:status', listener);
+      return () => ipcRenderer.removeListener('download:status', listener);
+    }
   }
 });

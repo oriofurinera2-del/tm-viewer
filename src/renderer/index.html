@@ -28,6 +28,8 @@
           <span id="feed-progress" role="status"></span>
           <label><input id="viewable-only" type="checkbox" checked> 見られる動画だけ</label>
           <label><input id="include-subscriptions" type="checkbox" checked> 購読を含める</label>
+          <button type="button" id="download-dir">保存先…</button>
+          <span class="download-status" role="status"></span>
         </div>
         <h1 id="feed-title">すべて</h1>
         <div id="feed-pager-top" class="pager"></div>
@@ -45,6 +47,8 @@
           <label class="visually-hidden" for="address">アドレス</label>
           <input id="address" type="url" autocomplete="off" spellcheck="false" value="https://www.tokyomotion.net/">
         </form>
+        <button type="button" id="download-current" disabled>ダウンロード</button>
+        <span class="download-status" role="status"></span>
         <span>広告遮断中</span>
       </div>
       <div id="site-area" aria-label="TOKYO Motion のサイト表示"></div>

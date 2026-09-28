@@ -1,12 +1,23 @@
 'use strict';
 
+const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, WebContentsView, ipcMain, session } = require('electron');
+const { app, BrowserWindow, WebContentsView, dialog, ipcMain, session } = require('electron');
 const { configureSession, enableVideoTagDebug, isSiteUrl } = require('./session');
 const { createFetcher } = require('./fetcher');
 const { createStore } = require('./store');
 const { parseMe, parseUserList, parseVideoList, parseVideoTags } = require('./parser');
 const { createFeedService } = require('./feed');
+const {
+  READ_PLAYER_SOURCES_SCRIPT,
+  buildFileName,
+  createDownloadQueue,
+  extensionFor,
+  pickVideoUrl,
+  uniqueFilePath,
+  videoIdFromUrl,
+  videoPageUrl
+} = require('./download');
 
 const START_URL = 'https://www.tokyomotion.net/';
 const SITE_PARTITION = 'persist:tm';
@@ -19,6 +30,8 @@ let siteView;
 let siteAttached = false;
 let siteSession;
 let feedService;
+let appStore;
+let downloadQueue;
 // 起動時の自動更新は 1 回だけ（DESIGN 4.4）。renderer の読み直しでは繰り返さない。
 let autoRefreshStarted = false;
 
@@ -28,6 +41,7 @@ function createFeedServices() {
     debugHosts: DEBUG_HOSTS
   });
   const store = createStore(app.getPath('userData'));
+  appStore = store;
   const fetcher = createFetcher({
     // persist:tm の Cookie を、サイト表示と同じ session から送る。
     // 呼び出し元の options に認証情報は受け取らず、必ずこの指定を使う。
@@ -127,6 +141,147 @@ function createWindow() {
   createSiteView();
   showSiteView();
 }
+
+// ---- ダウンロード（DESIGN 4.9） ----
+
+const PAGE_LOAD_TIMEOUT_MS = 30_000;
+const PLAYER_WAIT_MS = 15_000;
+const PLAYER_POLL_MS = 500;
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function downloadDir() {
+  const value = appStore?.loadSettings()?.downloadDir;
+  return typeof value === 'string' && value && fs.existsSync(value) ? value : app.getPath('downloads');
+}
+
+function sendDownloadStatus(status) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download:status', status);
+}
+
+// サイト表示で動画ページを開き、読み込みが終わるまで待つ。
+function openVideoPage(id) {
+  const contents = siteView.webContents;
+  if (videoIdFromUrl(contents.getURL()) === id && !contents.isLoading()) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      contents.removeListener('did-finish-load', onLoad);
+      contents.removeListener('did-fail-load', onFail);
+    };
+    const onLoad = () => { cleanup(); resolve(); };
+    const onFail = (_event, code, _description, _url, isMainFrame) => {
+      // -3 は別の移動で置き換えられたとき。最終的な読み込み完了を待つ。
+      if (!isMainFrame || code === -3) return;
+      cleanup();
+      reject(new Error('動画ページを開けませんでした'));
+    };
+    const timer = setTimeout(() => { cleanup(); reject(new Error('動画ページの読み込みが終わりませんでした')); }, PAGE_LOAD_TIMEOUT_MS);
+    contents.on('did-finish-load', onLoad);
+    contents.on('did-fail-load', onFail);
+    contents.loadURL(videoPageUrl(id)).catch(() => {});
+  });
+}
+
+// プレイヤーの <video>／<source> が実際に使う URL を読む。推測の URL は作らない。
+async function resolveVideoUrl(job) {
+  if (!siteView) throw new Error('サイト表示がありません');
+  await openVideoPage(job.id);
+  const contents = siteView.webContents;
+  const until = Date.now() + PLAYER_WAIT_MS;
+  while (Date.now() < until) {
+    if (videoIdFromUrl(contents.getURL()) !== job.id) throw new Error('動画ページから移動したため中止しました');
+    const candidates = await contents.executeJavaScript(READ_PLAYER_SOURCES_SCRIPT, false).catch(() => []);
+    const found = pickVideoUrl(candidates);
+    if (found) return found;
+    await delay(PLAYER_POLL_MS);
+  }
+  throw new Error('動画の URL を取得できませんでした（再生できない動画の可能性があります）');
+}
+
+// ログイン済みのセッション（persist:tm）のまま保存する。
+function saveVideo(job, found, onProgress) {
+  const ses = siteView.webContents.session;
+  const normalize = value => { try { return new URL(value).href; } catch { return String(value); } };
+  return new Promise((resolve, reject) => {
+    // 保存が始まらないまま待ち続けないようにする。
+    const timer = setTimeout(() => {
+      ses.removeListener('will-download', onWillDownload);
+      reject(new Error('保存を始められませんでした'));
+    }, PAGE_LOAD_TIMEOUT_MS);
+    const onWillDownload = (_event, item) => {
+      const chain = item.getURLChain();
+      if (normalize(chain[0]) !== normalize(found.url)) return;
+      clearTimeout(timer);
+      ses.removeListener('will-download', onWillDownload);
+      const fileName = buildFileName({
+        name: job.name,
+        title: job.title,
+        id: job.id,
+        ext: extensionFor({ filename: item.getFilename(), mimeType: item.getMimeType(), url: chain[chain.length - 1] })
+      });
+      const savePath = uniqueFilePath(downloadDir(), fileName, fs.existsSync);
+      item.setSavePath(savePath);
+      item.on('updated', () => {
+        const total = item.getTotalBytes();
+        onProgress(total > 0 ? (item.getReceivedBytes() / total) * 100 : null);
+      });
+      item.once('done', (_doneEvent, state) => {
+        if (state === 'completed') resolve({ fileName: path.basename(savePath) });
+        else reject(new Error(state === 'cancelled' ? '保存を取り消しました' : '保存に失敗しました'));
+      });
+    };
+    ses.on('will-download', onWillDownload);
+    try {
+      ses.downloadURL(found.url, { headers: { Referer: videoPageUrl(job.id) } });
+    } catch {
+      clearTimeout(timer);
+      ses.removeListener('will-download', onWillDownload);
+      reject(new Error('保存を始められませんでした'));
+    }
+  });
+}
+
+// ファイル名に使う独自の名前（DESIGN 4.8）と元のタイトル。
+function videoNames(id, pageTitle) {
+  const note = appStore?.loadNotes()?.[id];
+  const saved = feedService?.findVideo(id);
+  const title = saved?.title
+    || (typeof note?.title === 'string' ? note.title : '')
+    || String(pageTitle || '').replace(/\s*[-|]\s*TOKYO\s*Motion\s*$/i, '');
+  return { name: typeof note?.name === 'string' ? note.name : '', title };
+}
+
+function addDownload(id) {
+  if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, message: '動画IDが正しくありません' };
+  const pageTitle = siteView && videoIdFromUrl(siteView.webContents.getURL()) === id ? siteView.webContents.getTitle() : '';
+  const { name, title } = videoNames(id, pageTitle);
+  const added = downloadQueue.add({ id, name, title });
+  return { ok: added, message: added ? null : 'すでに保存待ちです' };
+}
+
+downloadQueue = createDownloadQueue({ resolveUrl: resolveVideoUrl, save: saveVideo, onUpdate: sendDownloadStatus });
+
+ipcMain.handle('download:add', (_event, id) => addDownload(Number(id)));
+ipcMain.handle('download:current', () => {
+  const id = siteView ? videoIdFromUrl(siteView.webContents.getURL()) : null;
+  return id ? addDownload(id) : { ok: false, message: '動画ページを開いてください' };
+});
+ipcMain.handle('download:dir', () => downloadDir());
+ipcMain.handle('download:choose-dir', async () => {
+  if (!mainWindow) return downloadDir();
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'ダウンロードの保存先',
+    defaultPath: downloadDir(),
+    properties: ['openDirectory', 'createDirectory']
+  });
+  if (!result.canceled && result.filePaths[0]) {
+    appStore.saveSettings({ ...appStore.loadSettings(), downloadDir: result.filePaths[0] });
+  }
+  return downloadDir();
+});
 
 ipcMain.handle('site:command', (_event, command, value) => {
   if (!siteView) return false;

@@ -1,6 +1,7 @@
 'use strict';
 const site = window.tmViewer.site;
 const feed = window.tmViewer.feed;
+const download = window.tmViewer.download;
 const $ = id => document.getElementById(id);
 const state = { selectedUser: null, page: 1, viewableOnly: true, includeSubscriptions: true, search: '', requestId: 0 };
 const back = $('back');
@@ -49,8 +50,31 @@ function videoCard(video) {
   // タグ未取得の動画は、カーソルを乗せたときにその 1 本だけ取る（DESIGN 4.2）。
   if (!Number.isFinite(video.siteTagsAt)) b.addEventListener('mouseenter', () => void loadTags(video.id), { once: true });
   b.append(image, title, info, badges, tags); b.onclick = async () => { await feed.watch(video.id, true); await site.command('navigate', `https://www.tokyomotion.net/video/${video.id}`); setView('site'); };
-  return b;
+  // ダウンロード（DESIGN 4.9）。カードのボタンの中に入れず、上に重ねる。
+  const wrap = document.createElement('div'); wrap.className = 'card-wrap';
+  const save = document.createElement('button'); save.type = 'button'; save.className = 'card-download'; save.textContent = '保存'; save.title = 'この動画をダウンロード';
+  save.onclick = () => void addDownload(download.add(video.id));
+  wrap.append(b, save);
+  return wrap;
 }
+// ダウンロードの進み具合。保存は 1 本ずつなので、最新の状態と待ちの本数を出す。
+const downloads = new Map();
+function showDownloadText(text) { document.querySelectorAll('.download-status').forEach(x => { x.textContent = text; }); }
+async function addDownload(request) {
+  const result = await request.catch(() => null);
+  if (!result?.ok) showDownloadText(result?.message || 'ダウンロードを始められませんでした');
+}
+download.onStatus(status => {
+  if (!status || !Number.isInteger(status.id)) return;
+  downloads.set(status.id, status);
+  const waiting = [...downloads.values()].filter(x => x.state === 'queued').length;
+  const label = status.name || `動画 ${status.id}`;
+  const percent = Number.isInteger(status.percent) && status.state === 'downloading' ? ` ${status.percent}%` : '';
+  const text = status.state === 'done' ? `完了: ${status.fileName || label}`
+    : status.state === 'failed' ? `失敗: ${label}（${status.message || '保存できませんでした'}）`
+    : `${status.message || ''}${percent}: ${label}`;
+  showDownloadText(waiting > 0 ? `${text}（あと ${waiting} 本）` : text);
+});
 function showTags(box, values) {
   const list = Array.isArray(values) ? values : []; box.textContent = list.join(' ・ '); box.title = list.join(' ・ ');
 }
@@ -129,7 +153,13 @@ $('refresh-feed').onclick = () => void refresh();
 $('viewable-only').onchange = e => { state.viewableOnly = e.target.checked; state.page = 1; void draw(); };
 $('include-subscriptions').onchange = e => { state.includeSubscriptions = e.target.checked; state.selectedUser = null; state.page = 1; void draw(); };
 $('person-search').oninput = e => { state.search = e.target.value.trim().toLowerCase(); void people(); };
-site.onState(x => { if (x.url) $('address').value = x.url; back.disabled = !x.canGoBack; forward.disabled = !x.canGoForward; });
+site.onState(x => {
+  if (x.url) $('address').value = x.url; back.disabled = !x.canGoBack; forward.disabled = !x.canGoForward;
+  $('download-current').disabled = !/^https?:\/\/(www\.)?tokyomotion\.net\/video\/\d+(\/|$|\?|#)/i.test(x.url || '');
+});
+$('download-current').onclick = () => void addDownload(download.current());
+$('download-dir').onclick = async () => { const dir = await download.chooseDir().catch(() => null); if (dir) $('download-dir').title = `保存先: ${dir}`; };
+download.dir().then(dir => { $('download-dir').title = `保存先: ${dir}`; }).catch(() => {});
 feed.onProgress(progress => {
   const done = Number(progress?.done); const total = Number(progress?.total);
   if (Number.isInteger(done) && done >= 0 && Number.isInteger(total) && total >= 0) $('feed-progress').textContent = `取得中 ${done}/${total}`;

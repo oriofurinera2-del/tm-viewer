@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   createFeedService,
   estimatePostedAt,
+  NEW_TAG_LIMIT,
   userListUrl,
   userVideosUrl,
   videoTagRequest
@@ -348,6 +349,23 @@ test('裏のタグ取得は 429 で止まり、タグを保存しない', async 
   assert.deepEqual(result, { done: 0, total: 2, stopped: true, status: 429 });
   assert.equal(h.calls.length, 1);
   assert.equal(store.cache()['friend-a'].videos[0].siteTagsAt, undefined);
+});
+
+test('裏のタグ取得は 1 回につき NEW の新しい順に 100 本まで', async () => {
+  const videos = Array.from({ length: 105 }, (_, index) => ({
+    id: index + 1, user: 'friend-a', kind: 'friend', firstSeenAt: 200, siteTags: []
+  }));
+  const store = memoryStore({ state: { lastOpenedAt: 100, watched: [] }, feedCache: { 'friend-a': { videos } } });
+  const h = tagHarness({ store });
+
+  const result = await h.service.fetchNewSiteTags();
+
+  assert.equal(NEW_TAG_LIMIT, 100);
+  assert.deepEqual(result, { done: 100, total: 100, stopped: false, status: null });
+  assert.equal(h.calls[0].options.body, 'act=list&item_id=105');
+  assert.equal(h.calls.at(-1).options.body, 'act=list&item_id=6');
+  // 残りの古い 5 本はカーソル時の取得に任せる。
+  assert.equal(store.cache()['friend-a'].videos.find(video => video.id === 5).siteTagsAt, undefined);
 });
 
 test('更新は、途中でカーソル取得したタグを古い cache で消さない', async () => {
