@@ -3,6 +3,10 @@
 const path = require('node:path');
 const { app, BrowserWindow, WebContentsView, ipcMain, session } = require('electron');
 const { configureSession, enableVideoTagDebug, isSiteUrl } = require('./session');
+const { createFetcher } = require('./fetcher');
+const { createStore } = require('./store');
+const { parseMe, parseUserList, parseVideoList } = require('./parser');
+const { createFeedService } = require('./feed');
 
 const START_URL = 'https://www.tokyomotion.net/';
 const SITE_PARTITION = 'persist:tm';
@@ -13,6 +17,30 @@ const SITE_VIEW_TOP = 88;
 let mainWindow;
 let siteView;
 let siteAttached = false;
+let siteSession;
+let feedService;
+
+function createFeedServices() {
+  siteSession = session.fromPartition(SITE_PARTITION);
+  configureSession(siteSession, path.join(__dirname, '../../data/blocklist.json'), {
+    debugHosts: DEBUG_HOSTS
+  });
+  const store = createStore(app.getPath('userData'));
+  const fetcher = createFetcher({
+    // persist:tm の Cookie を、サイト表示と同じ session から送る。
+    // 呼び出し元の options に認証情報は受け取らず、必ずこの指定を使う。
+    request: (url, options) => siteSession.fetch(url, {
+      ...(options && typeof options === 'object' ? options : {}),
+      credentials: 'include'
+    }),
+    parseVideoList,
+    store
+  });
+  feedService = createFeedService({ fetcher, store, parseUserList, parseVideoList });
+  return fetcher;
+}
+
+let feedFetcher;
 
 function sendSiteState() {
   if (!mainWindow || mainWindow.isDestroyed() || !siteView) return;
@@ -49,11 +77,6 @@ function hideSiteView() {
 }
 
 function createSiteView() {
-  const siteSession = session.fromPartition(SITE_PARTITION);
-  configureSession(siteSession, path.join(__dirname, '../../data/blocklist.json'), {
-    debugHosts: DEBUG_HOSTS
-  });
-
   siteView = new WebContentsView({
     webPreferences: {
       session: siteSession,
@@ -119,9 +142,33 @@ ipcMain.handle('site:command', (_event, command, value) => {
   return true;
 });
 
+ipcMain.handle('feed:refresh', async (_event, options) => {
+  const response = await feedFetcher.fetch(START_URL);
+  const me = parseMe(response.body);
+  if (!me) return { ok: false, message: 'サイトにログインしてから更新してください。' };
+  const result = await feedService.refresh({ me, includeSubscriptions: options?.includeSubscriptions !== false });
+  return { ok: !result.stopped, ...result };
+});
+
+ipcMain.handle('feed:open', (_event, options) => feedService.openFeed(options));
+ipcMain.handle('feed:get', (_event, options) => feedService.getFeed(options));
+ipcMain.handle('feed:people', (_event, options) => feedService.getPeople(options));
+ipcMain.handle('feed:person-page', (_event, options) => feedService.getPersonPage(options));
+ipcMain.handle('feed:watch', (_event, id, watched) => {
+  feedService.markWatched(id, watched !== false);
+  return true;
+});
+ipcMain.handle('feed:mute', (_event, user, muted) => {
+  feedService.setMuted(user, muted);
+  return true;
+});
+
 ipcMain.on('site:bounds', (_event, bounds) => resizeSiteView(bounds));
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  feedFetcher = createFeedServices();
+  createWindow();
+});
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });

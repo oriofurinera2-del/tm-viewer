@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test",
-    "check": "node --check src/main/main.js && node --check src/main/session.js && node --check src/main/fetcher.js && node --check src/main/store.js && node --check src/preload/preload.js && node --check src/renderer/renderer.js"
+    "check": "node --check src/main/main.js && node --check src/main/session.js && node --check src/main/fetcher.js && node --check src/main/feed.js && node --check src/main/store.js && node --check src/preload/preload.js && node --check src/renderer/renderer.js"
   },
   "dependencies": {
     "cheerio": "^1.1.2"

@@ -17,9 +17,23 @@
 
   <main>
     <section id="feed" hidden>
-      <h1>フィード</h1>
-      <p>ログイン後、ここに新着フィードを表示します。</p>
-      <button type="button" id="open-site">サイト表示を開く</button>
+      <aside id="people-panel">
+        <label class="visually-hidden" for="person-search">名前で絞り込み</label>
+        <input id="person-search" type="search" placeholder="名前で絞り込み">
+        <div id="people"></div>
+      </aside>
+      <div id="feed-content">
+        <div class="feed-tools">
+          <button type="button" id="refresh-feed">更新</button>
+          <span id="feed-progress" role="status"></span>
+          <label><input id="viewable-only" type="checkbox" checked> 見られる動画だけ</label>
+          <label><input id="include-subscriptions" type="checkbox" checked> 購読を含める</label>
+        </div>
+        <h1 id="feed-title">すべて</h1>
+        <div id="feed-pager-top" class="pager"></div>
+        <div id="feed-grid"></div>
+        <div id="feed-pager-bottom" class="pager"></div>
+      </div>
     </section>
 
     <section id="site">

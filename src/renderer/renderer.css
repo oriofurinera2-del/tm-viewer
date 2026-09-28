@@ -6,6 +6,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
 body { display: flex; flex-direction: column; min-width: 1024px; }
 button, input { font: inherit; }
@@ -53,7 +54,25 @@ section { height: 100%; }
   font-size: 12px;
 }
 #site-area { min-height: 0; flex: 1; }
-#feed { padding: 32px; }
+#feed { display: flex; padding: 0; overflow: hidden; }
+#people-panel { width: 240px; flex: none; overflow: auto; padding: 12px; border-right: 1px solid #2e3340; background: #1d2027; }
+#person-search { width: 100%; margin-bottom: 10px; padding: 6px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; }
+#people > div { display: flex; gap: 4px; margin: 3px 0; }
+#people button { border: 0; background: transparent; color: inherit; padding: 5px; text-align: left; }
+#people button:first-child { flex: 1; }
+#feed-content { flex: 1; overflow: auto; padding: 18px; }
+.feed-tools { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.feed-tools button, .pager button { padding: 6px 10px; border: 1px solid #3a4151; border-radius: 4px; background: #242833; }
+#feed-progress { color: #9eabc0; min-width: 7em; }
+#feed-title { font-size: 18px; margin: 18px 0 10px; }
+#feed-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px; min-height: 80px; }
+.video-card { min-width: 0; padding: 0; overflow: hidden; text-align: left; border: 1px solid #353b49; border-radius: 6px; background: #20242d; }
+.video-card.watched { opacity: .55; }
+.video-card img { display: block; width: 100%; height: 115px; object-fit: cover; background: #303746; }
+.video-card strong, .video-card span, .video-card small { display: block; padding: 5px 8px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.video-card span, .video-card small { color: #aeb6c5; font-size: 12px; }
+.video-card small { padding-bottom: 8px; color: #82c7ff; }
+.pager { display: flex; gap: 4px; margin: 12px 0; }
 .visually-hidden {
   position: absolute;
   width: 1px;
