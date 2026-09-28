@@ -6,6 +6,7 @@ const { configureSession, isSiteUrl } = require('./session');
 
 const START_URL = 'https://www.tokyomotion.net/';
 const SITE_PARTITION = 'persist:tm';
+const DEBUG_HOSTS = !app.isPackaged && process.argv.includes('--debug-hosts');
 // renderer の上部タブ (40px) とサイト操作バー (48px) の下に配置する。
 const SITE_VIEW_TOP = 88;
 
@@ -49,7 +50,9 @@ function hideSiteView() {
 
 function createSiteView() {
   const siteSession = session.fromPartition(SITE_PARTITION);
-  configureSession(siteSession, path.join(__dirname, '../../data/blocklist.json'));
+  configureSession(siteSession, path.join(__dirname, '../../data/blocklist.json'), {
+    debugHosts: DEBUG_HOSTS
+  });
 
   siteView = new WebContentsView({
     webPreferences: {
@@ -62,6 +65,9 @@ function createSiteView() {
 
   siteView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   siteView.webContents.on('will-navigate', (event, url) => {
+    if (!isSiteUrl(url)) event.preventDefault();
+  });
+  siteView.webContents.on('will-redirect', (event, url) => {
     if (!isSiteUrl(url)) event.preventDefault();
   });
   siteView.webContents.on('did-navigate', sendSiteState);
@@ -85,6 +91,8 @@ function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', event => event.preventDefault());
   mainWindow.on('closed', () => {
     mainWindow = undefined;
     siteAttached = false;

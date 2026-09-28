@@ -31,21 +31,45 @@ function readBlocklist(blocklistPath) {
   }
 }
 
-function isBlockedUrl(value, blocklist) {
+function getHostname(value) {
   try {
-    const hostname = new URL(value).hostname.toLowerCase();
-    return blocklist.some(domain => hostnameMatches(hostname, domain));
+    return new URL(value).hostname.toLowerCase();
   } catch {
-    return false;
+    return null;
   }
 }
 
-function configureSession(siteSession, blocklistPath) {
+function isBlockedUrl(value, blocklist) {
+  const hostname = getHostname(value);
+  return hostname !== null && blocklist.some(domain => hostnameMatches(hostname, domain));
+}
+
+function createRequestHandler(blocklist, { debugHosts = false, log = console.log } = {}) {
+  return (details, callback) => {
+    const hostname = getHostname(details.url);
+    const blocked = hostname !== null && blocklist.some(domain => hostnameMatches(hostname, domain));
+
+    if (debugHosts && hostname !== null && !SITE_HOSTS.has(hostname)) {
+      log(`[tm-viewer] host=${hostname} ${blocked ? 'blocked' : 'allowed'}`);
+    }
+    callback({ cancel: blocked });
+  };
+}
+
+function configureSession(siteSession, blocklistPath, options) {
   const blocklist = readBlocklist(blocklistPath);
-  siteSession.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
-    callback({ cancel: isBlockedUrl(details.url, blocklist) });
-  });
+  siteSession.webRequest.onBeforeRequest(
+    { urls: ['*://*/*'] },
+    createRequestHandler(blocklist, options)
+  );
   return blocklist;
 }
 
-module.exports = { SITE_HOSTS, configureSession, isBlockedUrl, isSiteUrl, readBlocklist };
+module.exports = {
+  SITE_HOSTS,
+  configureSession,
+  createRequestHandler,
+  isBlockedUrl,
+  isSiteUrl,
+  readBlocklist
+};
