@@ -464,10 +464,12 @@ ipcMain.handle('download:choose-dir', async () => {
 
 // ---- ログイン情報の保存（任意・DESIGN 4.1） ----
 
-ipcMain.handle('credentials:status', () => ({
-  available: credentials.isAvailable(safeStorage),
-  hasSaved: credentials.hasSaved(app.getPath('userData'))
-}));
+ipcMain.handle('credentials:status', () => {
+  const hasSaved = credentials.hasSaved(app.getPath('userData'));
+  // ID は秘密ではないので画面に戻す（保存済みだと分かるように）。パスワードは戻さない。
+  const savedId = hasSaved ? (credentials.load(app.getPath('userData'), safeStorage)?.id || '') : '';
+  return { available: credentials.isAvailable(safeStorage), hasSaved, savedId };
+});
 
 ipcMain.handle('credentials:save', (_event, id, password) => {
   if (!credentials.isAvailable(safeStorage)) return { ok: false, message: 'この環境では使えません' };

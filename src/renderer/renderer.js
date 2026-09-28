@@ -380,9 +380,11 @@ async function drawCredentials() {
   $('credentials-enabled').checked = status.hasSaved;
   $('credentials-inputs').hidden = !status.hasSaved;
   $('credentials-clear').hidden = !status.hasSaved;
-  $('credentials-id').value = '';
+  // 保存済みなら ID を表示（秘密ではない）。パスワードは出さず、保存済みと分かる表示にする。
+  $('credentials-id').value = status.savedId || '';
   $('credentials-password').value = '';
-  $('credentials-status').textContent = '';
+  $('credentials-password').placeholder = status.hasSaved ? '保存済み（変更するときだけ入力）' : '';
+  $('credentials-status').textContent = status.hasSaved ? 'ログイン情報は保存されています' : '';
 }
 $('credentials-enabled').onchange = async e => {
   if (e.target.checked) { $('credentials-inputs').hidden = false; return; }
