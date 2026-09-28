@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TM Viewer</title>
+  <link rel="stylesheet" href="renderer.css">
+</head>
+<body>
+  <header>
+    <span class="app-name">TM Viewer</span>
+    <nav aria-label="画面">
+      <button type="button" data-view="feed">フィード</button>
+      <button type="button" data-view="site" class="active">サイト表示</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="feed" hidden>
+      <h1>フィード</h1>
+      <p>ログイン後、ここに新着フィードを表示します。</p>
+      <button type="button" id="open-site">サイト表示を開く</button>
+    </section>
+
+    <section id="site">
+      <div class="appbar" id="site-toolbar">
+        <button type="button" id="to-feed">← フィードへ戻る</button>
+        <button type="button" id="back" title="戻る" aria-label="戻る">◀</button>
+        <button type="button" id="forward" title="進む" aria-label="進む">▶</button>
+        <form id="address-form">
+          <label class="visually-hidden" for="address">アドレス</label>
+          <input id="address" type="url" autocomplete="off" spellcheck="false" value="https://www.tokyomotion.net/">
+        </form>
+        <span>広告遮断中</span>
+      </div>
+      <div id="site-area" aria-label="TOKYO Motion のサイト表示"></div>
+    </section>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>

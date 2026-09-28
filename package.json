@@ -1,0 +1,18 @@
+{
+  "name": "tm-viewer",
+  "version": "0.1.0",
+  "description": "TOKYO Motion 用の PC 専用ブラウザ",
+  "main": "src/main/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "check": "node --check src/main/main.js && node --check src/main/session.js && node --check src/preload/preload.js && node --check src/renderer/renderer.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0"
+  }
+}
