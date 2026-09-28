@@ -60,7 +60,7 @@ parseVideoTags(body)   // /ajax/video_tag の応答 → ["タグ", ...]   ※応
 | C2 | Codex | fetcher（1 件ずつ・2 秒間隔・30 分キャッシュ・429/5xx で停止）と store | 4.4, 6 章 | parser をダミーにしたテストが通る | 済（オフラインテスト 25 件中 C2 を含め全件成功、`d87b6a3`） |
 | C3 | Codex | フィード画面をモックから実データへ（すべて／絞り込み／非表示／100 件ページ送り／個人の全動画／見られる動画だけ／視聴済み／推定投稿日） | 4.2, 4.3, 4.6, 5 章 | ログインして更新するとフィードが出る | プロトタイプ実装・テスト済み（`576bc0f`）。実ログイン状態での取得確認待ち。タグの新規取得は K2 待ち |
 | K2 | Claude | `/ajax/video_tag` の送る内容と応答を、C1 のアプリ内で確認し parseVideoTags を完成 | 4.2, 8 章 | 実際のタグが取れる | C1 の後 |
-| C4 | Codex | 名前・タグ・得点、整理した動画画面、書き出し/読み込み | 4.8 | 付けた内容が再起動後も残る | C3 の後 |
+| C4 | Codex（実装は Claude が代行） | 名前・タグ・得点、整理した動画画面、書き出し/読み込み | 4.8 | 付けた内容が再起動後も残る | 済（`src/main/notes.js` 新規・`src/main/main.js`/`src/preload/preload.js`/`src/renderer/*` に追加。`npm run check`・`npm test` 通過。実機（実際のログイン状態でのカード操作・上部バー）は未確認） |
 | C6 | Codex | ログイン情報の保存（任意・初期値オフ・safeStorage・失敗 1 回で停止）。`.codex/agents/code.toml` の「パスワードを保存しない」はこの機能に限り例外 | 4.1 | オンで保存→ログアウト状態から自動ログインできる。オフで保存ファイルが消える。パスワードがログに出ないことをテストで確認 | C3 の後 |
 | C7 | Claude/Codex | アプリ内の検索（検索タブ・カーソルで投稿者とタグ取得・フレンド印） | 4.10 | 検索結果がアプリのカードで出る | C4 の後 |
 | C5 | Codex | electron-builder で portable exe | 2 章, 3 章 | exe 1 つで起動する | 最後 |
@@ -71,6 +71,8 @@ parseVideoTags(body)   // /ajax/video_tag の応答 → ["タグ", ...]   ※応
 ## 5. 連絡（相手への依頼・質問・引き継ぎ）
 
 新しいものを上に書く。済んだら「済」を付ける。
+
+- Claude → Codex/K3（2026-09-29、C4 実装）: 独自の名前・タグ・得点（4.8）を実装。`src/main/notes.js`（正規化・絞り込み/並べ替え/ページ送り・書き出し統合の純粋関数、`test/notes.test.js` で単体テスト）、`main.js` に `notes:context/set/tags/organized/export/import` の IPC、`preload.js` に `tmViewer.notes`、`renderer.js`/`index.html`/`renderer.css` にフィードカードの★直接付け・✎編集欄・独自タグ表示、「整理した動画」タブ、サイト表示の動画ページ限定の上部バー（名前・タグ・★）、フィード上部の「保存先…」隣に書き出し/読み込みボタンを追加。保存は `notes.json` のまま、main 経由のみで renderer から直接ファイルに触らない。`npm run check`・`npm test`（73件）通過。**実機未確認**: 実際のログイン状態でのカード操作・上部バー表示・書き出し/読み込みダイアログ。アプリの起動はユーザー使用中のため行っていない。
 
 - Claude → Codex（2026-09-29 実機確認の結果）: フィードは実サイトで取得できた（ユーザー確認）。記録にパスワードは無かった。
   1. **K2 確定 → parseVideoTags を直す**（K2 は Codex に移管）: 応答は JSON `{"status":0,"msg":"<HTML>"}`。`JSON.parse` → `msg` を cheerio で読み `a.tag` のテキストを返す。投票ボタン（`tagvp`）は無視。送信は `act=list&item_id=<ID>` だけ。fixture は架空のタグ名で作る。詳細 DESIGN 8 章。そのうえで C3 のタグ取得（NEW は自動・他はカーソル）をつなぐ。
