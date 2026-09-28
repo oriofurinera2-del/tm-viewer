@@ -2,7 +2,15 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createRequestHandler, isBlockedUrl, isSiteUrl } = require('../src/main/session');
+const { EventEmitter } = require('node:events');
+const path = require('node:path');
+const {
+  configureSession,
+  createRequestHandler,
+  isBlockedUrl,
+  isSiteUrl,
+  isVideoTagRequest
+} = require('../src/main/session');
 
 test('サイト本体と www だけをサイト遷移として許可する', () => {
   assert.equal(isSiteUrl('https://tokyomotion.net/login'), true);
@@ -52,4 +60,80 @@ test('開発時の通信ログは外部ホスト名と遮断結果だけを記�
   assert.deepEqual(logs, ['[tm-viewer] host=syndication.realsrv.com blocked']);
   assert.equal(logs.join('\n').includes('/path'), false);
   assert.equal(logs.join('\n').includes('secret'), false);
+});
+
+test('タグ通信の記録対象はサイト本体の POST /ajax/video_tag に限る', () => {
+  assert.equal(isVideoTagRequest({
+    method: 'POST',
+    url: 'https://www.tokyomotion.net/ajax/video_tag'
+  }), true);
+  assert.equal(isVideoTagRequest({
+    method: 'GET',
+    url: 'https://www.tokyomotion.net/ajax/video_tag'
+  }), false);
+  assert.equal(isVideoTagRequest({
+    method: 'POST',
+    url: 'https://www.tokyomotion.net/ajax/video_tags'
+  }), false);
+  assert.equal(isVideoTagRequest({
+    method: 'POST',
+    url: 'https://tokyomotion.net.evil.example/ajax/video_tag'
+  }), false);
+});
+
+test('デバッグ時だけタグ通信本文と応答先頭500文字を記録する', () => {
+  const logs = [];
+  const filter = new EventEmitter();
+  const forwarded = [];
+  filter.write = chunk => forwarded.push(chunk);
+  filter.end = () => { filter.ended = true; };
+  let listener;
+  const fakeSession = {
+    webRequest: {
+      onBeforeRequest: (_filter, handler) => { listener = handler; },
+      filterResponseData: requestId => {
+        assert.equal(requestId, 42);
+        return filter;
+      }
+    }
+  };
+
+  configureSession(fakeSession, path.join(__dirname, '../data/blocklist.json'), {
+    debugHosts: true,
+    log: message => logs.push(message)
+  });
+  listener({
+    id: 42,
+    method: 'POST',
+    url: 'https://www.tokyomotion.net/ajax/video_tag',
+    uploadData: [{ bytes: Buffer.from('video_id=12') }]
+  }, () => {});
+  const response = 'x'.repeat(600);
+  filter.emit('data', Buffer.from(response));
+  filter.emit('end');
+
+  assert.deepEqual(logs, [
+    '[tm-viewer] video-tag request=video_id=12',
+    `[tm-viewer] video-tag response=${response.slice(0, 500)}`
+  ]);
+  assert.deepEqual(forwarded, [Buffer.from(response)]);
+  assert.equal(filter.ended, true);
+});
+
+test('非デバッグ時はタグ通信の本文と応答を取得しない', () => {
+  let listener;
+  const fakeSession = {
+    webRequest: {
+      onBeforeRequest: (_filter, handler) => { listener = handler; },
+      filterResponseData: () => assert.fail('非デバッグ時に応答を取得してはいけない')
+    }
+  };
+
+  configureSession(fakeSession, path.join(__dirname, '../data/blocklist.json'));
+  listener({
+    id: 42,
+    method: 'POST',
+    url: 'https://www.tokyomotion.net/ajax/video_tag',
+    uploadData: [{ bytes: Buffer.from('video_id=12') }]
+  }, () => {});
 });
