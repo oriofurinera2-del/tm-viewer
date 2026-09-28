@@ -1,6 +1,6 @@
 # 引き継ぎと作業の割り振り（Claude Code ⇄ Codex）
 
-最終更新: 2026-09-28（Claude Code）
+最終更新: 2026-09-28（Codex）
 
 作業を始める前に読む順番: `AGENTS.md`（Codex）/ `CLAUDE.md`（Claude）→ このファイル → `docs/DESIGN.md` の該当節。
 
@@ -10,7 +10,7 @@
 
 - 設計: `docs/DESIGN.md` で v0.1 の仕様はほぼ確定。フィード画面は `docs/mock/feed.html` を正とする（5 章）。
 - サイトの HTML 構造: ログイン後の画面で確認済み。結果は DESIGN.md **8 章**（URL・セレクタ・1 ページの件数など）。
-- コード: **まだ 1 行も無い**。次は v0.1 の実装。
+- コード: C1 の Electron 土台を実装済み（`ffedab9`）。実サイトの画面・通信確認は K3 待ち。
 - git: ローカルで管理（ブランチ `main`、リモート未設定＝GitHub には未公開）。コミットの名前とメールはこのリポジトリだけに個人用アカウントを設定済み。**PC 全体の git 設定（仕事用）を変えたり、コミット時に上書きしたりしない。**
 - タスクごとにコミットする。メッセージは日本語で「何を・なぜ」を短く。
 
@@ -43,8 +43,8 @@ test/*.test.js（その他）  … Codex
 
 ```js
 parseMe(html)          // → "自分のユーザー名" | null
-parseUserList(html)    // フレンド一覧・購読一覧 → { users: ["名前", ...], lastPage: 数 }
-parseVideoList(html)   // /user/<名前>/videos → { videos: [{ id, title, duration, hd, private, thumb, ago }], lastPage: 数 }
+parseUserList(html)    // フレンド一覧・購読一覧 → { users: ["名前", ...], lastPage: 数, total: 数 | null }
+parseVideoList(html)   // /user/<名前>/videos → { videos: [{ id, title, duration, hd, private, thumb, ago }], lastPage: 数, total: 数 | null }
 parseVideoTags(body)   // /ajax/video_tag の応答 → ["タグ", ...]   ※応答の形は未確認（K2）
 ```
 
@@ -55,7 +55,7 @@ parseVideoTags(body)   // /ajax/video_tag の応答 → ["タグ", ...]   ※応
 
 | ID | 担当 | 内容 | DESIGN | 完了条件 | 状態 |
 |---|---|---|---|---|---|
-| C1 | Codex | 土台: package.json、main、preload、session。サイト表示（戻る/進む・アドレス・「フィードへ戻る」）。広告遮断と外部遷移・`window.open` の拒否 | 3 章, 4.1, 4.5, 5 章 | `npm start` で起動し、サイト表示でログイン画面が出る。外部ドメインへの遷移が止まる。サイト自身の `/ajax/…` `/vsrc/…` は止めない | 未着手 |
+| C1 | Codex | 土台: package.json、main、preload、session。サイト表示（戻る/進む・アドレス・「フィードへ戻る」）。広告遮断と外部遷移・`window.open` の拒否 | 3 章, 4.1, 4.5, 5 章 | `npm start` で起動し、サイト表示でログイン画面が出る。外部ドメインへの遷移が止まる。サイト自身の `/ajax/…` `/vsrc/…` は止めない | 実装・単体テスト済み、実サイト確認待ち（`ffedab9`） |
 | K1 | Claude | parser.js・fixtures・parser のテスト | 8 章 | `node --test` が通る | 未着手 |
 | C2 | Codex | fetcher（1 件ずつ・2 秒間隔・30 分キャッシュ・429/5xx で停止）と store | 4.4, 6 章 | parser をダミーにしたテストが通る | C1 の後 |
 | C3 | Codex | フィード画面をモックから実データへ（すべて／絞り込み／非表示／100 件ページ送り／個人の全動画／見られる動画だけ／視聴済み／推定投稿日） | 4.2, 4.3, 4.6, 5 章 | ログインして更新するとフィードが出る | C2・K1 の後 |
@@ -70,7 +70,7 @@ parseVideoTags(body)   // /ajax/video_tag の応答 → ["タグ", ...]   ※応
 
 新しいものを上に書く。済んだら「済」を付ける。
 
-- （まだ無し）
+- C1 → K3: `npm start` は起動エラーなし。Electron ウィンドウが GUI 自動化対象に出なかったため、ログイン画面表示・外部遷移拒否・実サイトの `/ajax/…` `/vsrc/…` と広告遮断を実機で確認してください。`npm run check` と `node --test test/session.test.js` は成功（2 件）。
 
 ## 6. 共通ルールの要点（詳細は CLAUDE.md / AGENTS.md / harness/README.md）
 
