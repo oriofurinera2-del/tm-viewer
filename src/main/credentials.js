@@ -83,23 +83,25 @@ function isLoginUrl(value) {
 }
 
 // サイト表示のログイン画面へ入力して送信するスクリプト（webContents.executeJavaScript で実行）。
-// 8 章にセレクタの確認が無いため、固定の input[name=...] ではなく
-// 「パスワード欄を含む form」を探して、その中の ID/メール欄に入力する汎用的なやり方にしている。
-// 実サイトで固定のセレクタが確認できたら、そちらに置き換えるほうが確実。
+// 8 章の実測どおり、ページには 2 つの form がある（上部メニューの簡易フォームと本体フォーム）。
+// 本体フォームだけに「記憶する」チェック input[name="login_remember"] があるので、
+// これを含む form を対象にする（簡易フォームを誤って埋めないため）。
+// 見つからない場合のみ、password 欄を含み action が /login な form にフォールバックする。
+// 欄は input[name="username"]・input[name="password"]、送信は button[name="submit_login"]（無ければ form の submit）。
 // 戻り値（true/false）で「入力・送信できたか」だけを main 側に伝え、成否の最終判定は
 // 送信後のページがまだログイン画面かどうかで行う（呼び出し側）。
 function buildLoginScript(id, password) {
   return `(() => {
   try {
-    const form = Array.from(document.querySelectorAll('form'))
-      .find(f => f.querySelector('input[type="password"]'));
+    const forms = Array.from(document.querySelectorAll('form'));
+    let form = forms.find(f => f.querySelector('input[name="login_remember"]'));
+    if (!form) {
+      form = forms.find(f => f.querySelector('input[type="password"]')
+        && (f.getAttribute('action') || '').indexOf('/login') !== -1);
+    }
     if (!form) return false;
-    const passwordInput = form.querySelector('input[type="password"]');
-    const idInput = form.querySelector('input[type="email"]')
-      || form.querySelector('input[type="text"]')
-      || form.querySelector('input[name*="user" i]')
-      || form.querySelector('input[name*="login" i]')
-      || form.querySelector('input[name*="email" i]');
+    const idInput = form.querySelector('input[name="username"]');
+    const passwordInput = form.querySelector('input[name="password"]');
     if (!idInput || !passwordInput) return false;
     const setValue = (el, value) => {
       const proto = Object.getPrototypeOf(el);
@@ -110,7 +112,15 @@ function buildLoginScript(id, password) {
     };
     setValue(idInput, ${JSON.stringify(id)});
     setValue(passwordInput, ${JSON.stringify(password)});
-    if (typeof form.requestSubmit === 'function') form.requestSubmit();
+    const rememberInput = form.querySelector('input[name="login_remember"]');
+    if (rememberInput && !rememberInput.checked) {
+      rememberInput.checked = true;
+      rememberInput.dispatchEvent(new Event('input', { bubbles: true }));
+      rememberInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    const submitButton = form.querySelector('button[name="submit_login"]');
+    if (submitButton) submitButton.click();
+    else if (typeof form.requestSubmit === 'function') form.requestSubmit();
     else form.submit();
     return true;
   } catch (e) {

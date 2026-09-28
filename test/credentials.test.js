@@ -113,8 +113,69 @@ test('ログインスクリプトは id・password を JSON.stringify で埋め�
   assert.doesNotThrow(() => new Function(`return ${script}`));
 });
 
-test('ログインスクリプトはパスワード欄を含む form を探して送信する組み立て', () => {
+test('ログインスクリプトは login_remember を含む本体フォームを対象にし、username/password/submit_login を使う組み立て', () => {
   const script = buildLoginScript('id', 'password');
-  assert.equal(script.includes('input[type="password"]'), true);
-  assert.equal(script.includes('requestSubmit'), true);
+  assert.equal(script.includes('input[name="login_remember"]'), true);
+  assert.equal(script.includes('input[name="username"]'), true);
+  assert.equal(script.includes('input[name="password"]'), true);
+  assert.equal(script.includes('button[name="submit_login"]'), true);
+  assert.equal(script.includes('requestSubmit'), true); // フォールバック
+});
+
+// jsdom 等は使わず、8 章の実測に沿った最小限の DOM 相当オブジェクトをその場で組み立てて
+// buildLoginScript の戻り値（文字列）を実際に評価し、正しい form が選ばれることを検証する。
+function fakeInput(name, type) {
+  return { name, type, value: '', checked: false, listeners: [], dispatchEvent(e) { this.listeners.push(e.type); } };
+}
+function fakeForm({ action, hasRemember, hasSubmitButton }) {
+  const username = fakeInput('username', 'text');
+  const password = fakeInput('password', 'password');
+  const remember = hasRemember ? { ...fakeInput('login_remember', 'checkbox') } : null;
+  const submitButton = hasSubmitButton ? { name: 'submit_login', clicked: false, click() { this.clicked = true; } } : null;
+  const fields = [username, password, remember, submitButton].filter(Boolean);
+  return {
+    action,
+    requestSubmitCalled: false,
+    getAttribute(attr) { return attr === 'action' ? this.action : null; },
+    querySelector(sel) {
+      if (sel === 'input[name="login_remember"]') return remember;
+      if (sel === 'input[name="username"]') return username;
+      if (sel === 'input[name="password"]') return password;
+      if (sel === 'input[type="password"]') return password;
+      if (sel === 'button[name="submit_login"]') return submitButton;
+      return null;
+    },
+    requestSubmit() { this.requestSubmitCalled = true; },
+    _fields: { username, password, remember, submitButton }
+  };
+}
+function runScript(script, forms) {
+  const fakeDocument = { querySelectorAll: sel => (sel === 'form' ? forms : []) };
+  const fakeWindow = { Event: function Event(type) { this.type = type; } };
+  const fn = new Function('document', 'Object', 'Event', `return ${script}`);
+  const result = fn(fakeDocument, Object, fakeWindow.Event);
+  return result;
+}
+
+test('ログインスクリプトは、上部メニューの簡易フォーム（login_remember なし）ではなく本体フォームを選ぶ', () => {
+  const quick = fakeForm({ action: '/login', hasRemember: false, hasSubmitButton: true });
+  const main = fakeForm({ action: '/login', hasRemember: true, hasSubmitButton: true });
+  const script = buildLoginScript('my-id', 'my-password');
+  const result = runScript(script, [quick, main]);
+  assert.equal(result, true);
+  assert.equal(main._fields.username.value, 'my-id');
+  assert.equal(main._fields.password.value, 'my-password');
+  assert.equal(main._fields.remember.checked, true);
+  assert.equal(main._fields.submitButton.clicked, true);
+  assert.equal(quick._fields.username.value, ''); // 簡易フォームは埋めない
+});
+
+test('ログインスクリプトは login_remember が無いとき、password 欄と action=/login を持つ form にフォールバックする', () => {
+  const only = fakeForm({ action: '/login', hasRemember: false, hasSubmitButton: false });
+  const script = buildLoginScript('id2', 'password2');
+  const result = runScript(script, [only]);
+  assert.equal(result, true);
+  assert.equal(only._fields.username.value, 'id2');
+  assert.equal(only._fields.password.value, 'password2');
+  assert.equal(only.requestSubmitCalled, true); // submit_login ボタンが無いのでフォールバック
 });
