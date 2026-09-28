@@ -240,7 +240,7 @@ blocklist.json    ["juicyads.com", ...]
 - [x] 動画一覧: `/user/<名前>/videos?page=N`、1 ページ 18 件 [実測]。各動画は `div#video_<ID>`。PRIVATE は `.label-private`、長さは `.duration`、投稿日は `.video-added`（「23 時 前」のような相対表示）
 - [x] アップロード画面（`/upload/video`）: ファイル選択は 1 つだけ（`multiple` なし）[実測]。サイトの画面では複数まとめて上げられない
 - [x] 動画の総数: 一覧の上に「公開中 1 へ 18 の 686 ビデオ.」（686 件中 1〜18 件目）と出る [実測]。フレンド一覧・購読一覧にも同じ形の一文がある（「… の 61 友達.」「… の 7 subscriptions.」）。ページ送りにも最後のページ番号（例: 38）が出る。1 ページ目を読むだけで総件数と総ページ数が分かる。（最初の確認で「総数は出ていない」としたのは誤り。見出しだけを探していた）
-- [x] サイトの検索: `/search?search_query=<語>&search_type=videos`。絞り込み `type=public|private`、期間 `t=t|w|m|a`、並べ替え `o=mr|mv|md|tr|tf|lg|bw` [実測]。1 語（japanese）は 35,030 件、**2 語（japanese amateur）は 2 回とも「ビデオが見つかりませんでした.」** [実測]。「0 件と出て、読み込み直すと出る」症状（ユーザー報告）は今回は再現せず
+- [x] サイトの検索: `/search?search_query=<語>&search_type=videos`。絞り込み `type=public|private`、期間 `t=t|w|m|a`、並べ替え `o=mr|mv|md|tr|tf|lg|bw` [実測]。1 語（japanese）は 35,030 件。英語 2 語（japanese amateur）は 2 回とも「ビデオが見つかりませんでした」が、日本語の 2 語（素人 カップル）は 1,426 件を返した [実測]。複数語検索をアプリで作り直さず、サイト検索をそのまま使う。「0 件と出て、読み込み直すと出る」症状は、当面は利用者が手で読み直す（自動読み直しは作らない、2026-09-28 ユーザー決定）。
 - [x] サムネイル: `img` の `src` に `https://cdn.tokyo-motion.net/…` の URL [実測]。**広告遮断でこのドメインを止めないこと**。`alt` にタイトル全文が入っている
 
 ## 9. リスク
