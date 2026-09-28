@@ -19,7 +19,7 @@
   },
   "build": {
     "appId": "net.tokyomotion.tmviewer",
-    "productName": "TM Viewer",
+    "productName": "しこしこフレンズ探検隊.exe（ウィルスじゃないよ）",
     "files": [
       "package.json",
       "src/**/*",
@@ -27,7 +27,7 @@
     ],
     "win": {
       "target": "portable",
-      "artifactName": "TM-Viewer-${version}-portable.${ext}"
+      "artifactName": "${productName}.${ext}"
     }
   }
 }

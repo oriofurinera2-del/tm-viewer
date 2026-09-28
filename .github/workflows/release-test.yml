@@ -37,22 +37,24 @@ jobs:
       - name: Package executable
         shell: pwsh
         run: |
-          $version = (Get-Content 'package.json' -Raw | ConvertFrom-Json).version
-          $baseName = "TM-Viewer-$version-portable"
-          Compress-Archive -LiteralPath "dist/$baseName.exe" -DestinationPath "dist/$baseName.zip"
+          $appName = (Get-Content 'package.json' -Raw | ConvertFrom-Json).build.productName
+          $exePath = "dist/$appName.exe"
+          $zipPath = "dist/$appName-$env:GITHUB_REF_NAME.zip"
+          if (-not (Test-Path -LiteralPath $exePath)) { throw "Built executable not found: $exePath" }
+          Compress-Archive -LiteralPath $exePath -DestinationPath $zipPath
 
       - name: Attest the downloadable ZIP
         uses: actions/attest@v4
         with:
-          subject-path: dist/TM-Viewer-*-portable.zip
+          subject-path: dist/*.zip
 
       - name: Publish test release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = (Get-Content 'package.json' -Raw | ConvertFrom-Json).version
-          $zipPath = "dist/TM-Viewer-$version-portable.zip"
+          $appName = (Get-Content 'package.json' -Raw | ConvertFrom-Json).build.productName
+          $zipPath = "dist/$appName-$env:GITHUB_REF_NAME.zip"
           $runUrl = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
           $notes = "Windows x64 向けのテスト版です。ZIPを展開し、exeを起動してください。公開コードからGitHub上でビルドしています。ビルド記録: $runUrl 配布ZIPのビルド証明も記録しています。アプリ内検索は開発中で、実サイトでの通し確認はこれからです。未署名のためWindowsの警告が出る場合があります。"
-          gh release create "$env:GITHUB_REF_NAME" "$zipPath" --repo "$env:GITHUB_REPOSITORY" --verify-tag --prerelease --title "$env:GITHUB_REF_NAME テスト版" --notes "$notes"
+          gh release create "$env:GITHUB_REF_NAME" "$zipPath" --repo "$env:GITHUB_REPOSITORY" --verify-tag --prerelease --title "$appName $env:GITHUB_REF_NAME テスト版" --notes "$notes"
