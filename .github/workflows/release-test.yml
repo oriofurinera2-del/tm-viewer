@@ -15,10 +15,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Check out the tagged source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -53,4 +53,6 @@ jobs:
         run: |
           $version = (Get-Content 'package.json' -Raw | ConvertFrom-Json).version
           $zipPath = "dist/TM-Viewer-$version-portable.zip"
-          gh release create "$env:GITHUB_REF_NAME" "$zipPath" --repo "$env:GITHUB_REPOSITORY" --verify-tag --prerelease --title "$env:GITHUB_REF_NAME テスト版" --notes 'Windows x64 向けのテスト版です。ZIPを展開し、exeを起動してください。公開コードからこのワークフローでビルドし、配布ZIPのビルド証明を記録しています。アプリ内検索は開発中で、実サイトでの通し確認はこれからです。未署名のためWindowsの警告が出る場合があります。'
+          $runUrl = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $notes = "Windows x64 向けのテスト版です。ZIPを展開し、exeを起動してください。公開コードからGitHub上でビルドしています。ビルド記録: $runUrl 配布ZIPのビルド証明も記録しています。アプリ内検索は開発中で、実サイトでの通し確認はこれからです。未署名のためWindowsの警告が出る場合があります。"
+          gh release create "$env:GITHUB_REF_NAME" "$zipPath" --repo "$env:GITHUB_REPOSITORY" --verify-tag --prerelease --title "$env:GITHUB_REF_NAME テスト版" --notes "$notes"
