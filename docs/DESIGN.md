@@ -200,13 +200,15 @@ renderer（アプリ画面）
 ## 6. 保存データ（userData/）
 
 ```
-feed-cache.json   { "<ユーザー名>": { fetchedAt, allPagesFetchedAt, videos: [{ id, title, duration, hd, private, thumb, ago, postedAtEst, firstSeenAt, siteTags }] } }
+feed-cache.json   { "<ユーザー名>": { fetchedAt, allPagesFetchedAt, fetchedSitePages: [取得済みのサイトページ番号...], videos: [{ id, title, duration, hd, private, thumb, ago, postedAtEst, firstSeenAt, siteTags }] } }
 state.json        { me, lastOpenedAt, watched: [id...], muted: [ユーザー名...] }
 credentials.bin   safeStorage で暗号化した { id, password }（4.1 の設定がオンのときだけ存在）
 notes.json        { "<動画ID>": { name, tags: [...], score, user, title, thumb, updatedAt } }
 settings.json     { intervalMs, cacheMinutes, includeSubscriptions, viewableOnly }
 blocklist.json    ["juicyads.com", ...]
 ```
+
+個人の全動画の続きを取得するときは `fetchedSitePages` を参照する（2026-09-28 採用）。新しい動画が増えてページの境界がずれる場合も、動画IDで重複を除き、未取得の動画を飛ばさないようにする。
 
 ---
 
