@@ -10,6 +10,7 @@ const { parseMe, parseUserList, parseVideoList, parseVideoTags } = require('./pa
 const { createFeedService } = require('./feed');
 const notes = require('./notes');
 const credentials = require('./credentials');
+const { persistableCookies } = require('./cookie-persist');
 const {
   CanceledError,
   READ_PLAYER_SOURCES_SCRIPT,
@@ -27,6 +28,10 @@ const {
 const START_URL = 'https://www.tokyomotion.net/';
 const LOGIN_URL = 'https://www.tokyomotion.net/login';
 const SITE_PARTITION = 'persist:tm';
+// ログイン Cookie（セッション Cookie）を書き戻すときに付ける有効期限（約10年）。
+// DESIGN 4.1「ログイン情報の保存」背景: Electron の persist セッションは再起動でセッション
+// Cookie を破棄するため、終了時に期限を付けて保存し直す（Chrome と同じ挙動にする）。
+const COOKIE_FAR_FUTURE_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 const DEBUG_HOSTS = !app.isPackaged && process.argv.includes('--debug-hosts');
 // renderer の上部タブ (40px) とサイト操作バー (48px) の下に配置する。
 const SITE_VIEW_TOP = 88;
@@ -64,6 +69,30 @@ function createFeedServices() {
   });
   feedService = createFeedService({ fetcher, store, parseUserList, parseVideoList, parseVideoTags });
   return fetcher;
+}
+
+// persist:tm のセッション Cookie（ログイン Cookie）を、遠い未来の有効期限を付けて書き戻す。
+// これをしないと Electron はアプリ終了時にセッション Cookie を破棄し、ログインが切れる
+// （DESIGN 4.1「ログイン情報の保存」背景）。値・ハッシュはログに出さない。
+async function persistSiteSessionCookies() {
+  if (!siteSession) return;
+  let cookies;
+  try {
+    cookies = await siteSession.cookies.get({});
+  } catch {
+    return;
+  }
+  const targets = persistableCookies(cookies, Date.now(), COOKIE_FAR_FUTURE_MS, { tokyoMotionOnly: true });
+  let persisted = 0;
+  for (const details of targets) {
+    try {
+      await siteSession.cookies.set(details);
+      persisted += 1;
+    } catch {
+      /* 1 件失敗しても他の Cookie は続ける */
+    }
+  }
+  if (DEBUG_HOSTS) console.log(`[tm-viewer] persisted session cookies: ${persisted}/${targets.length}`);
 }
 
 let feedFetcher;
@@ -656,4 +685,15 @@ app.on('window-all-closed', () => {
 });
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+
+// 終了前にセッション Cookie を書き戻す（1 回だけ・完了してから実際に終了する）。
+let quittingAfterCookiePersist = false;
+app.on('before-quit', event => {
+  if (quittingAfterCookiePersist) return;
+  event.preventDefault();
+  persistSiteSessionCookies().finally(() => {
+    quittingAfterCookiePersist = true;
+    app.quit();
+  });
 });
