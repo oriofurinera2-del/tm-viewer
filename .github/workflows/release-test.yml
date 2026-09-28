@@ -1,0 +1,56 @@
+name: Build test release
+
+on:
+  push:
+    tags:
+      - 'v*-test.*'
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check source and run tests
+        run: |
+          npm run check
+          npm test
+
+      - name: Build portable executable
+        run: npm run dist
+
+      - name: Package executable
+        shell: pwsh
+        run: |
+          $version = (Get-Content 'package.json' -Raw | ConvertFrom-Json).version
+          $baseName = "TM-Viewer-$version-portable"
+          Compress-Archive -LiteralPath "dist/$baseName.exe" -DestinationPath "dist/$baseName.zip"
+
+      - name: Attest the downloadable ZIP
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/TM-Viewer-*-portable.zip
+
+      - name: Publish test release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content 'package.json' -Raw | ConvertFrom-Json).version
+          $zipPath = "dist/TM-Viewer-$version-portable.zip"
+          gh release create "$env:GITHUB_REF_NAME" "$zipPath" --repo "$env:GITHUB_REPOSITORY" --verify-tag --prerelease --title "$env:GITHUB_REF_NAME テスト版" --notes 'Windows x64 向けのテスト版です。ZIPを展開し、exeを起動してください。公開コードからこのワークフローでビルドし、配布ZIPのビルド証明を記録しています。アプリ内検索は開発中で、実サイトでの通し確認はこれからです。未署名のためWindowsの警告が出る場合があります。'

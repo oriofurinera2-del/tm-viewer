@@ -5,6 +5,8 @@ TOKYO Motion を PC で快適に見るための、Windows 専用の閲覧アプ�
 
 配布版は [GitHub Releases](https://github.com/oriofurinera2-del/tm-viewer/releases) から入手します。このリポジトリではアプリのコードを確認できます。
 
+`v0.1.0-test.2` 以降のテスト版は、公開したコードから GitHub Actions でビルドします。各配布ページからビルド記録を確認でき、ZIPにはビルド元を示す証明が付いています。最初の `v0.1.0-test.1` は手元のPCでビルドした版です。
+
 - 本人と知り合い向けのアプリです。すべての処理は各自の PC 内で完結し、外部サーバーには送信しません。
 - 現在 **開発中（v0.1）** です。一部の機能はまだ作成中です。
 
@@ -78,5 +80,7 @@ npm run dist     # Windows x64 向け portable exe を dist/ に作成
 ```
 
 配布版には `src/`、`data/allowlist.json`、実行に必要な依存パッケージのみを含めます。開発用の文書・テスト・AI 向け設定は含めません。
+
+テスト版の公開は `v*-test.*` 形式のタグを送信すると、`.github/workflows/release-test.yml` がビルド・テスト・証明・Releases への登録まで行います。手元で作ったZIPは配布に使用しません。
 
 設計は [docs/DESIGN.md](docs/DESIGN.md) を正とします。
