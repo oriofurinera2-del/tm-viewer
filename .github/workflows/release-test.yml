@@ -39,7 +39,7 @@ jobs:
         run: |
           $appName = (Get-Content 'package.json' -Raw | ConvertFrom-Json).build.productName
           $exePath = "dist/$appName.exe"
-          $zipPath = "dist/$appName-$env:GITHUB_REF_NAME.zip"
+          $zipPath = "dist/tm-viewer-$env:GITHUB_REF_NAME.zip"
           if (-not (Test-Path -LiteralPath $exePath)) { throw "Built executable not found: $exePath" }
           Compress-Archive -LiteralPath $exePath -DestinationPath $zipPath
 
@@ -54,7 +54,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $appName = (Get-Content 'package.json' -Raw | ConvertFrom-Json).build.productName
-          $zipPath = "dist/$appName-$env:GITHUB_REF_NAME.zip"
+          $zipPath = "dist/tm-viewer-$env:GITHUB_REF_NAME.zip"
           $runUrl = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
           $notes = "Windows x64 向けのテスト版です。ZIPを展開し、exeを起動してください。公開コードからGitHub上でビルドしています。ビルド記録: $runUrl 配布ZIPのビルド証明も記録しています。アプリ内検索は開発中で、実サイトでの通し確認はこれからです。未署名のためWindowsの警告が出る場合があります。"
           gh release create "$env:GITHUB_REF_NAME" "$zipPath" --repo "$env:GITHUB_REPOSITORY" --verify-tag --prerelease --title "$appName $env:GITHUB_REF_NAME テスト版" --notes "$notes"
