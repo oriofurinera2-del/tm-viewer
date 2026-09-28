@@ -3,10 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const path = require('node:path');
 const {
-  configureSession,
   createRequestHandler,
+  enableVideoTagDebug,
   isBlockedUrl,
   isSiteUrl,
   isVideoTagRequest
@@ -81,59 +80,55 @@ test('タグ通信の記録対象はサイト本体の POST /ajax/video_tag に�
   }), false);
 });
 
-test('デバッグ時だけタグ通信本文と応答先頭500文字を記録する', () => {
+test('デバッグ時だけタグ通信本文と応答先頭500文字を記録する', async () => {
   const logs = [];
-  const filter = new EventEmitter();
-  const forwarded = [];
-  filter.write = chunk => forwarded.push(chunk);
-  filter.end = () => { filter.ended = true; };
-  let listener;
-  const fakeSession = {
-    webRequest: {
-      onBeforeRequest: (_filter, handler) => { listener = handler; },
-      filterResponseData: requestId => {
-        assert.equal(requestId, 42);
-        return filter;
-      }
+  const debuggerApi = new EventEmitter();
+  const commands = [];
+  debuggerApi.attach = version => { debuggerApi.version = version; };
+  debuggerApi.sendCommand = (method, params) => {
+    commands.push({ method, params });
+    if (method === 'Network.getResponseBody') {
+      return Promise.resolve({ body: 'x'.repeat(600), base64Encoded: false });
     }
+    return Promise.resolve({});
   };
 
-  configureSession(fakeSession, path.join(__dirname, '../data/blocklist.json'), {
-    debugHosts: true,
-    log: message => logs.push(message)
+  assert.equal(enableVideoTagDebug({ debugger: debuggerApi }, message => logs.push(message)), true);
+  debuggerApi.emit('message', {}, 'Network.requestWillBeSent', {
+    requestId: '42',
+    request: {
+      method: 'POST',
+      url: 'https://www.tokyomotion.net/ajax/video_tag',
+      postData: 'video_id=12'
+    }
   });
-  listener({
-    id: 42,
-    method: 'POST',
-    url: 'https://www.tokyomotion.net/ajax/video_tag',
-    uploadData: [{ bytes: Buffer.from('video_id=12') }]
-  }, () => {});
-  const response = 'x'.repeat(600);
-  filter.emit('data', Buffer.from(response));
-  filter.emit('end');
+  debuggerApi.emit('message', {}, 'Network.loadingFinished', { requestId: '42' });
+  await new Promise(resolve => setImmediate(resolve));
 
   assert.deepEqual(logs, [
     '[tm-viewer] video-tag request=video_id=12',
-    `[tm-viewer] video-tag response=${response.slice(0, 500)}`
+    `[tm-viewer] video-tag response=${'x'.repeat(500)}`
   ]);
-  assert.deepEqual(forwarded, [Buffer.from(response)]);
-  assert.equal(filter.ended, true);
+  assert.equal(debuggerApi.version, '1.3');
+  assert.deepEqual(commands, [
+    { method: 'Network.enable', params: undefined },
+    { method: 'Network.getResponseBody', params: { requestId: '42' } }
+  ]);
 });
 
-test('非デバッグ時はタグ通信の本文と応答を取得しない', () => {
+test('通常のセッション処理はタグ通信の本文と応答を取得しない', () => {
   let listener;
   const fakeSession = {
     webRequest: {
-      onBeforeRequest: (_filter, handler) => { listener = handler; },
-      filterResponseData: () => assert.fail('非デバッグ時に応答を取得してはいけない')
+      onBeforeRequest: (_filter, handler) => { listener = handler; }
     }
   };
 
-  configureSession(fakeSession, path.join(__dirname, '../data/blocklist.json'));
+  const handler = createRequestHandler([], {});
+  fakeSession.webRequest.onBeforeRequest({}, handler);
   listener({
-    id: 42,
     method: 'POST',
     url: 'https://www.tokyomotion.net/ajax/video_tag',
-    uploadData: [{ bytes: Buffer.from('video_id=12') }]
+    get uploadData() { assert.fail('本文を取得してはいけない'); }
   }, () => {});
 });

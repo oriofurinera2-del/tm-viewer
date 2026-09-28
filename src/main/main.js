@@ -2,7 +2,7 @@
 
 const path = require('node:path');
 const { app, BrowserWindow, WebContentsView, ipcMain, session } = require('electron');
-const { configureSession, isSiteUrl } = require('./session');
+const { configureSession, enableVideoTagDebug, isSiteUrl } = require('./session');
 
 const START_URL = 'https://www.tokyomotion.net/';
 const SITE_PARTITION = 'persist:tm';
@@ -72,6 +72,7 @@ function createSiteView() {
   });
   siteView.webContents.on('did-navigate', sendSiteState);
   siteView.webContents.on('did-navigate-in-page', sendSiteState);
+  if (DEBUG_HOSTS) enableVideoTagDebug(siteView.webContents);
   siteView.webContents.loadURL(START_URL);
 }
 

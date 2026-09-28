@@ -56,32 +56,45 @@ function isVideoTagRequest(details) {
   }
 }
 
-function getUploadText(uploadData) {
-  if (!Array.isArray(uploadData)) return '';
-  const chunks = uploadData
-    .filter(part => part && part.bytes)
-    .map(part => Buffer.from(part.bytes));
-  return Buffer.concat(chunks).toString('utf8');
+function getResponsePreview(result) {
+  if (!result || typeof result.body !== 'string') return '';
+  const body = result.base64Encoded
+    ? Buffer.from(result.body, 'base64').toString('utf8')
+    : result.body;
+  return body.slice(0, 500);
 }
 
-function captureVideoTagResponse(siteSession, requestId, log) {
-  const filter = siteSession.webRequest.filterResponseData(requestId);
-  const chunks = [];
-  let byteLength = 0;
-  const previewLimit = 4096;
+function enableVideoTagDebug(webContents, log = console.log) {
+  const debuggerApi = webContents.debugger;
+  const requestIds = new Set();
 
-  filter.on('data', chunk => {
-    if (byteLength < previewLimit) {
-      const preview = Buffer.from(chunk).subarray(0, previewLimit - byteLength);
-      chunks.push(preview);
-      byteLength += preview.length;
+  try {
+    debuggerApi.attach('1.3');
+  } catch {
+    log('[tm-viewer] video-tag debug unavailable');
+    return false;
+  }
+
+  debuggerApi.on('message', (_event, method, params) => {
+    const requestId = params?.requestId;
+    if (method === 'Network.requestWillBeSent' && isVideoTagRequest(params?.request)) {
+      requestIds.add(requestId);
+      log(`[tm-viewer] video-tag request=${params.request.postData || ''}`);
+      return;
     }
-    filter.write(chunk);
+    if (method === 'Network.loadingFailed') {
+      requestIds.delete(requestId);
+      return;
+    }
+    if (method === 'Network.loadingFinished' && requestIds.delete(requestId)) {
+      debuggerApi.sendCommand('Network.getResponseBody', { requestId })
+        .then(result => log(`[tm-viewer] video-tag response=${getResponsePreview(result)}`))
+        .catch(() => log('[tm-viewer] video-tag response unavailable'));
+    }
   });
-  filter.on('end', () => {
-    log(`[tm-viewer] video-tag response=${Buffer.concat(chunks).toString('utf8').slice(0, 500)}`);
-    filter.end();
-  });
+  debuggerApi.sendCommand('Network.enable')
+    .catch(() => log('[tm-viewer] video-tag debug unavailable'));
+  return true;
 }
 
 function createRequestHandler(blocklist, { debugHosts = false, log = console.log } = {}) {
@@ -96,19 +109,11 @@ function createRequestHandler(blocklist, { debugHosts = false, log = console.log
   };
 }
 
-function configureSession(siteSession, blocklistPath, options = {}) {
+function configureSession(siteSession, blocklistPath, options) {
   const blocklist = readBlocklist(blocklistPath);
-  const requestHandler = createRequestHandler(blocklist, options);
   siteSession.webRequest.onBeforeRequest(
     { urls: ['*://*/*'] },
-    (details, callback) => {
-      if (options.debugHosts && isVideoTagRequest(details)) {
-        const log = options.log || console.log;
-        log(`[tm-viewer] video-tag request=${getUploadText(details.uploadData)}`);
-        captureVideoTagResponse(siteSession, details.id, log);
-      }
-      requestHandler(details, callback);
-    }
+    createRequestHandler(blocklist, options)
   );
   return blocklist;
 }
@@ -117,8 +122,8 @@ module.exports = {
   SITE_HOSTS,
   configureSession,
   createRequestHandler,
-  captureVideoTagResponse,
-  getUploadText,
+  enableVideoTagDebug,
+  getResponsePreview,
   isBlockedUrl,
   isSiteUrl,
   isVideoTagRequest,
