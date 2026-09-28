@@ -3,6 +3,7 @@ const site = window.tmViewer.site;
 const feed = window.tmViewer.feed;
 const notes = window.tmViewer.notes;
 const download = window.tmViewer.download;
+const credentials = window.tmViewer.credentials;
 const $ = id => document.getElementById(id);
 const state = { selectedUser: null, page: 1, viewableOnly: true, includeSubscriptions: true, search: '', requestId: 0 };
 const back = $('back');
@@ -12,13 +13,14 @@ function opts() { return { includeSubscriptions: state.includeSubscriptions, vie
 function isCurrent(requestId) { return requestId === state.requestId; }
 function setView(name) {
   const show = name === 'site';
-  $('feed').hidden = name !== 'feed'; $('organized').hidden = name !== 'organized'; $('site').hidden = !show; $('downloads').hidden = name !== 'downloads';
+  $('feed').hidden = name !== 'feed'; $('organized').hidden = name !== 'organized'; $('site').hidden = !show; $('downloads').hidden = name !== 'downloads'; $('settings').hidden = name !== 'settings';
   document.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('active', x.dataset.view === name));
   site.command(show ? 'show' : 'hide');
   if (show) bounds();
   else if (name === 'feed') void draw(true);
   else if (name === 'organized') void drawOrganized();
   else if (name === 'downloads') renderDownloadsTab();
+  else if (name === 'settings') void drawCredentials();
 }
 function bounds() { const r = $('site-area').getBoundingClientRect(); site.setBounds({ width: r.width, height: r.height }); }
 function pager(id, current, pages, onGo) {
@@ -367,6 +369,52 @@ $('notes-import').onclick = async () => {
     if (!$('organized').hidden) void drawOrganized();
   } else if (result?.message) showDownloadText(result.message);
 };
+
+// ---- ログイン情報の保存（DESIGN 4.1）: 値は main に渡すだけで、渡された値をここで保持しない ----
+async function drawCredentials() {
+  const status = await credentials.status().catch(() => ({ available: false, hasSaved: false }));
+  $('credentials-unavailable').hidden = status.available;
+  $('credentials-form').hidden = !status.available;
+  if (!status.available) return;
+  $('credentials-enabled').checked = status.hasSaved;
+  $('credentials-inputs').hidden = !status.hasSaved;
+  $('credentials-clear').hidden = !status.hasSaved;
+  $('credentials-id').value = '';
+  $('credentials-password').value = '';
+  $('credentials-status').textContent = '';
+}
+$('credentials-enabled').onchange = async e => {
+  if (e.target.checked) { $('credentials-inputs').hidden = false; return; }
+  $('credentials-inputs').hidden = true;
+  const result = await credentials.clear().catch(() => null);
+  $('credentials-clear').hidden = true;
+  $('credentials-status').textContent = result?.ok ? '保存した情報を削除しました' : '';
+};
+$('credentials-save').onclick = async () => {
+  const id = $('credentials-id').value.trim();
+  const password = $('credentials-password').value;
+  const result = await credentials.save(id, password).catch(() => null);
+  $('credentials-password').value = '';
+  if (result?.ok) {
+    $('credentials-clear').hidden = false;
+    $('credentials-status').textContent = '保存しました';
+  } else {
+    $('credentials-status').textContent = result?.message || '保存できませんでした';
+  }
+};
+$('credentials-clear').onclick = async () => {
+  const result = await credentials.clear().catch(() => null);
+  $('credentials-enabled').checked = false;
+  $('credentials-inputs').hidden = true;
+  $('credentials-clear').hidden = true;
+  $('credentials-id').value = ''; $('credentials-password').value = '';
+  $('credentials-status').textContent = result?.ok ? '保存した情報を削除しました' : '';
+};
+credentials.onAutoLoginFailed(() => {
+  const message = '自動ログインに失敗しました。手動でログインしてください。';
+  $('feed-progress').textContent = message;
+  $('credentials-status').textContent = message;
+});
 
 // ---- サイト表示: 動画ページを開いているときだけ、上部バーの下に名前・タグ・得点の入力欄を出す（4.8） ----
 function extractVideoId(url) {

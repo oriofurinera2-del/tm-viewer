@@ -2,13 +2,14 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, session, shell, safeStorage } = require('electron');
 const { configureSession, enableVideoTagDebug, isSiteUrl } = require('./session');
 const { createFetcher } = require('./fetcher');
 const { createStore } = require('./store');
 const { parseMe, parseUserList, parseVideoList, parseVideoTags } = require('./parser');
 const { createFeedService } = require('./feed');
 const notes = require('./notes');
+const credentials = require('./credentials');
 const {
   CanceledError,
   READ_PLAYER_SOURCES_SCRIPT,
@@ -24,6 +25,7 @@ const {
 } = require('./download');
 
 const START_URL = 'https://www.tokyomotion.net/';
+const LOGIN_URL = 'https://www.tokyomotion.net/login';
 const SITE_PARTITION = 'persist:tm';
 const DEBUG_HOSTS = !app.isPackaged && process.argv.includes('--debug-hosts');
 // renderer の上部タブ (40px) とサイト操作バー (48px) の下に配置する。
@@ -39,6 +41,9 @@ let appStore;
 let downloadQueue;
 // 起動時の自動更新は 1 回だけ（DESIGN 4.4）。renderer の読み直しでは繰り返さない。
 let autoRefreshStarted = false;
+// 自動ログイン（DESIGN 4.1）: 同時に 2 回動かさない・失敗したら次のログイン成功まで再試行しない。
+let autoLoginBusy = false;
+let autoLoginBlocked = false;
 
 function createFeedServices() {
   siteSession = session.fromPartition(SITE_PARTITION);
@@ -114,7 +119,11 @@ function createSiteView() {
   siteView.webContents.on('will-redirect', (event, url) => {
     if (!isSiteUrl(url)) event.preventDefault();
   });
-  siteView.webContents.on('did-navigate', sendSiteState);
+  siteView.webContents.on('did-navigate', () => {
+    sendSiteState();
+    // ログアウトされてログイン画面になったときの自動ログイン（DESIGN 4.1）。
+    if (credentials.isLoginUrl(siteView.webContents.getURL())) void attemptAutoLogin();
+  });
   siteView.webContents.on('did-navigate-in-page', sendSiteState);
   if (DEBUG_HOSTS) enableVideoTagDebug(siteView.webContents);
   siteView.webContents.loadURL(START_URL);
@@ -140,6 +149,61 @@ function createDownloadView() {
     if (!isSiteUrl(url)) event.preventDefault();
   });
   downloadView.webContents.loadURL('about:blank');
+}
+
+// ---- ログイン情報の保存・自動ログイン（DESIGN 4.1） ----
+
+// 読み込み中なら終わるまで待つ（タイムアウトしても例外にはしない。自動ログインの失敗判定は呼び出し側で行う）。
+function waitForSiteLoad(contents, timeoutMs = PAGE_LOAD_TIMEOUT_MS) {
+  if (!contents.isLoading()) return Promise.resolve();
+  return new Promise(resolve => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      contents.removeListener('did-finish-load', onDone);
+      contents.removeListener('did-fail-load', onFail);
+    };
+    const onDone = () => { cleanup(); resolve(); };
+    const onFail = (_event, code, _description, _url, isMainFrame) => {
+      if (!isMainFrame || code === -3) return; // -3 は別の移動で置き換えられたとき
+      cleanup(); resolve();
+    };
+    const timer = setTimeout(() => { cleanup(); resolve(); }, timeoutMs);
+    contents.on('did-finish-load', onDone);
+    contents.on('did-fail-load', onFail);
+  });
+}
+
+// ログアウトされていたとき、保存したログイン情報でサイトのログイン画面に入力して送信する（DESIGN 4.1）。
+// 失敗（送信後もログイン画面のまま）は 1 回で止め、次にログインが成功するまで再試行しない
+// （連続失敗でアカウントが制限されるのを防ぐ）。id・password はこの関数のスコープの外に出さない。
+async function attemptAutoLogin() {
+  if (!siteView || autoLoginBusy || autoLoginBlocked) return false;
+  const saved = credentials.load(app.getPath('userData'), safeStorage);
+  if (!saved) return false;
+  autoLoginBusy = true;
+  try {
+    const contents = siteView.webContents;
+    if (!credentials.isLoginUrl(contents.getURL())) {
+      await contents.loadURL(LOGIN_URL).catch(() => {});
+    }
+    await waitForSiteLoad(contents);
+    const submitted = await contents.executeJavaScript(credentials.buildLoginScript(saved.id, saved.password), false).catch(() => false);
+    if (!submitted) {
+      autoLoginBlocked = true;
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('credentials:auto-login-failed');
+      return false;
+    }
+    await waitForSiteLoad(contents);
+    if (credentials.isLoginUrl(contents.getURL())) {
+      autoLoginBlocked = true;
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('credentials:auto-login-failed');
+      return false;
+    }
+    autoLoginBlocked = false;
+    return true;
+  } finally {
+    autoLoginBusy = false;
+  }
 }
 
 // ウィンドウ上部のメニューを日本語の最小メニューに置き換える（5 章、2026-09-29）。
@@ -398,6 +462,34 @@ ipcMain.handle('download:choose-dir', async () => {
   return downloadDir();
 });
 
+// ---- ログイン情報の保存（任意・DESIGN 4.1） ----
+
+ipcMain.handle('credentials:status', () => ({
+  available: credentials.isAvailable(safeStorage),
+  hasSaved: credentials.hasSaved(app.getPath('userData'))
+}));
+
+ipcMain.handle('credentials:save', (_event, id, password) => {
+  if (!credentials.isAvailable(safeStorage)) return { ok: false, message: 'この環境では使えません' };
+  if (typeof id !== 'string' || !id.trim() || typeof password !== 'string' || !password) {
+    return { ok: false, message: 'IDとパスワードを入力してください' };
+  }
+  try {
+    credentials.save(app.getPath('userData'), safeStorage, id.trim(), password);
+    autoLoginBlocked = false;
+    return { ok: true, hasSaved: true };
+  } catch {
+    // 理由にパスワードは含めない。
+    return { ok: false, message: '保存できませんでした' };
+  }
+});
+
+ipcMain.handle('credentials:clear', () => {
+  credentials.clear(app.getPath('userData'));
+  autoLoginBlocked = false;
+  return { ok: true, hasSaved: false };
+});
+
 ipcMain.handle('site:command', (_event, command, value) => {
   if (!siteView) return false;
   if (command === 'back' && siteView.webContents.navigationHistory.canGoBack()) {
@@ -419,9 +511,18 @@ ipcMain.handle('feed:refresh', async (_event, options) => {
     if (autoRefreshStarted) return { ok: false, skipped: true };
     autoRefreshStarted = true;
   }
-  const response = await feedFetcher.fetch(START_URL);
-  const me = parseMe(response.body);
+  let response = await feedFetcher.fetch(START_URL);
+  let me = parseMe(response.body);
+  if (!me) {
+    // 取得でログイン状態が無いとき、保存したログイン情報があれば自動ログインを試みる（DESIGN 4.1）。
+    const loggedIn = await attemptAutoLogin();
+    if (loggedIn) {
+      response = await feedFetcher.fetch(START_URL);
+      me = parseMe(response.body);
+    }
+  }
   if (!me) return { ok: false, loggedIn: false, message: 'サイトにログインしてから更新してください。' };
+  autoLoginBlocked = false;
   const result = await feedService.refresh({
     me,
     includeSubscriptions: options?.includeSubscriptions !== false,

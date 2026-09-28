@@ -131,6 +131,18 @@ section { height: 100%; }
 .download-row strong { flex: none; max-width: 16em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .download-row span { flex: 1; min-width: 0; color: #9eabc0; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .download-row button { flex: none; padding: 4px 10px; border: 1px solid #3a4151; border-radius: 4px; background: #242833; }
+#settings { overflow: auto; padding: 18px; max-width: 640px; }
+#settings h1 { font-size: 18px; margin: 0 0 18px; }
+.settings-group { padding: 14px 16px; margin-bottom: 16px; border: 1px solid #2e3340; border-radius: 6px; background: #1d2027; }
+.settings-group h2 { font-size: 14px; margin: 0 0 10px; color: #aeb6c5; }
+.settings-group button { padding: 6px 10px; margin-right: 8px; border: 1px solid #3a4151; border-radius: 4px; background: #242833; }
+.credentials-warning { margin: 8px 0; padding-left: 20px; color: #f5c542; font-size: 12px; }
+#credentials-inputs { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0; }
+#credentials-inputs .field { display: flex; align-items: center; gap: 6px; }
+#credentials-inputs .lbl { color: #8b92a3; font-size: 12px; }
+#credentials-inputs input { padding: 5px 8px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; font: inherit; }
+#credentials-status { display: block; margin-top: 8px; color: #9eabc0; font-size: 12px; }
+
 .visually-hidden {
   position: absolute;
   width: 1px;

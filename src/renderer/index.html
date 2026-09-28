@@ -14,6 +14,7 @@
       <button type="button" data-view="organized">整理した動画</button>
       <button type="button" data-view="site" class="active">サイト表示</button>
       <button type="button" data-view="downloads">ダウンロード</button>
+      <button type="button" data-view="settings">設定</button>
     </nav>
   </header>
 
@@ -30,9 +31,6 @@
           <span id="feed-progress" role="status"></span>
           <label><input id="viewable-only" type="checkbox" checked> 見られる動画だけ</label>
           <label><input id="include-subscriptions" type="checkbox" checked> 購読を含める</label>
-          <button type="button" id="download-dir">保存先…</button>
-          <button type="button" id="notes-export">整理データを書き出す</button>
-          <button type="button" id="notes-import">整理データを読み込む</button>
           <span class="download-status" role="status"></span>
         </div>
         <h1 id="feed-title">すべて</h1>
@@ -90,6 +88,37 @@
 
     <section id="downloads" hidden>
       <div id="downloads-list"></div>
+    </section>
+
+    <section id="settings" hidden>
+      <h1>設定</h1>
+
+      <div class="settings-group">
+        <h2>ダウンロード・整理データ</h2>
+        <button type="button" id="download-dir">保存先…</button>
+        <button type="button" id="notes-export">整理データを書き出す</button>
+        <button type="button" id="notes-import">整理データを読み込む</button>
+        <span class="download-status" role="status"></span>
+      </div>
+
+      <div class="settings-group" id="credentials-group">
+        <h2>ログイン情報の保存</h2>
+        <p id="credentials-unavailable" hidden>この環境では使えません。</p>
+        <div id="credentials-form">
+          <label><input id="credentials-enabled" type="checkbox"> ログイン情報を保存して自動でログインする</label>
+          <ul class="credentials-warning">
+            <li>他人と共有している PC では使わない</li>
+            <li>このサイト専用の（他で使い回していない）パスワードにする</li>
+          </ul>
+          <div id="credentials-inputs" hidden>
+            <label class="field"><span class="lbl">ID</span><input id="credentials-id" type="text" autocomplete="off"></label>
+            <label class="field"><span class="lbl">パスワード</span><input id="credentials-password" type="password" autocomplete="off"></label>
+            <button type="button" id="credentials-save">保存</button>
+          </div>
+          <button type="button" id="credentials-clear" hidden>保存した情報を削除</button>
+          <span id="credentials-status" role="status"></span>
+        </div>
+      </div>
     </section>
   </main>
   <script src="renderer.js"></script>

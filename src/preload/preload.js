@@ -45,6 +45,17 @@ contextBridge.exposeInMainWorld('tmViewer', {
     exportData: () => ipcRenderer.invoke('notes:export'),
     importData: () => ipcRenderer.invoke('notes:import')
   },
+  credentials: {
+    // 値（ID・パスワード）を読み出す操作は無い。main で暗号化・復号し、渡すのは状態と成否だけ。
+    status: () => ipcRenderer.invoke('credentials:status'),
+    save: (id, password) => ipcRenderer.invoke('credentials:save', id, password),
+    clear: () => ipcRenderer.invoke('credentials:clear'),
+    onAutoLoginFailed: callback => {
+      const listener = () => callback();
+      ipcRenderer.on('credentials:auto-login-failed', listener);
+      return () => ipcRenderer.removeListener('credentials:auto-login-failed', listener);
+    }
+  },
   download: {
     add: id => ipcRenderer.invoke('download:add', id),
     current: () => ipcRenderer.invoke('download:current'),
