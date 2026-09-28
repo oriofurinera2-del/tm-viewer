@@ -198,8 +198,9 @@ function bumpDownloadOrder(id) {
 function updateDownloadsTabLabel() {
   const button = document.querySelector('[data-view="downloads"]');
   if (!button) return;
+  const label = button.querySelector('.tab-label') || button;
   const active = [...downloads.values()].filter(x => x.state === 'downloading').length;
-  button.textContent = active > 0 ? `ダウンロード (${active})` : 'ダウンロード';
+  label.textContent = active > 0 ? `ダウンロード (${active})` : 'ダウンロード';
 }
 function downloadRowLabel(status) {
   if (status.state === 'downloading' && Number.isInteger(status.percent)) return `${status.message || '保存中'} ${status.percent}%`;
