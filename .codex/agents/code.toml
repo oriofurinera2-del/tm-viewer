@@ -1,0 +1,12 @@
+name = "code"
+description = "TM Viewer の実装・修正・テスト（Electron main/preload/renderer、HTML解析、UI、ビルド設定）。"
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"
+
+developer_instructions = """
+docs/DESIGN.md の指定された節に従って担当箇所を変更する。未決定の設計は自分で決めず報告する。無関係なリファクタリングをしない。
+contextIsolation/sandbox を有効、nodeIntegration を無効に保つ。ログイン入力値やパスワードを読まない・保存しない・ログに出さない。ダウンロード機能を追加しない。
+サイトHTMLの解析は1モジュールにまとめる。テストは実サイトに接続せず、画像・成人向け本文を除いた test/fixtures/ を使う。
+変更後に関連する構文チェックかテストを実行する。
+子エージェントを起動しない。終わった分から順にファイルへ書く。結果・変更ファイル・確認方法・未確認点を短く報告する。
+"""

@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>TM Viewer - フィード画面モック</title>
+<!-- 使い捨てのレイアウト確認用モック。DESIGN.md 4.2 / 4.6 / 4.8 / 5 章の案を形にしたもの。ダミーデータのみ、外部通信なし。 -->
+<style>
+  :root {
+    --bg: #16181d;
+    --panel: #1d2027;
+    --panel2: #242833;
+    --line: #2e3340;
+    --text: #e4e6eb;
+    --muted: #8b92a3;
+    --accent: #4f8cff;
+    --new: #ff8a3d;
+    --private: #c76bff;
+    --hd: #3ec28f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif; font-size: 13px;
+    display: flex; flex-direction: column; min-width: 1024px;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  /* 上部タブ */
+  header {
+    display: flex; align-items: center; height: 40px; padding: 0 12px;
+    background: var(--panel); border-bottom: 1px solid var(--line); flex: none;
+  }
+  .app-name { font-weight: 600; margin-right: 20px; color: var(--muted); }
+  .tabs { display: flex; height: 100%; }
+  .tab {
+    background: none; border: none; padding: 0 16px; height: 100%;
+    color: var(--muted); border-bottom: 2px solid transparent;
+  }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .user { margin-left: auto; color: var(--muted); }
+  .user b { color: var(--text); font-weight: 500; }
+
+  [hidden] { display: none !important; }
+  /* 上部タブで切り替える各画面 */
+  .view { flex: 1; display: flex; min-height: 0; }
+  .view.col { flex-direction: column; }
+
+  /* 左: 人の一覧 */
+  aside {
+    width: 240px; flex: none; background: var(--panel); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .search { padding: 8px; border-bottom: 1px solid var(--line); }
+  .search input {
+    width: 100%; padding: 6px 8px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 4px; font: inherit;
+  }
+  .people { overflow-y: auto; flex: 1; padding: 4px 0; }
+  .person {
+    display: flex; align-items: center; width: 100%; padding: 6px 12px;
+    background: none; border: none; text-align: left;
+  }
+  .person:hover { background: var(--panel2); }
+  .person.selected { background: #2a3550; }
+  .person .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .person.zero .name { color: var(--muted); }
+  .person.all { font-weight: 600; }
+  /* 非表示（ミュート）中の行 */
+  .person.muted { opacity: .5; }
+  .person.muted .name { color: var(--muted); text-decoration: line-through; }
+  /* 目アイコンのトグル（行内のボタンにできないため span で扱う） */
+  .eye {
+    display: flex; align-items: center; justify-content: center; flex: none;
+    width: 22px; height: 22px; margin-right: 6px; border-radius: 4px; color: var(--muted);
+  }
+  .eye:hover { background: var(--line); color: var(--text); }
+  .eye svg { width: 16px; height: 16px; display: block; }
+  .eye.off { color: var(--new); }
+  .badge {
+    min-width: 22px; padding: 1px 6px; border-radius: 9px; text-align: center;
+    background: var(--accent); color: #fff; font-size: 11px;
+  }
+  .badge.zero { background: transparent; color: var(--muted); }
+  .group-head {
+    padding: 10px 12px 4px; color: var(--muted); font-size: 11px;
+    border-top: 1px solid var(--line); margin-top: 4px;
+  }
+
+  /* 右 */
+  section.feed { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .toolbar {
+    display: flex; align-items: center; gap: 14px; padding: 8px 14px;
+    border-bottom: 1px solid var(--line); background: var(--panel); flex: none;
+  }
+  .btn {
+    padding: 5px 14px; border-radius: 4px; border: 1px solid var(--line); background: var(--panel2);
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .progress { color: var(--muted); min-width: 110px; }
+  .progress .bar { display: inline-block; width: 80px; height: 4px; background: var(--line); vertical-align: middle; margin-left: 6px; border-radius: 2px; overflow: hidden; }
+  .progress .bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+  .toolbar label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .toolbar .spacer { flex: 1; }
+  .filter-label { color: var(--muted); }
+
+  .grid-wrap { flex: 1; overflow-y: auto; padding: 14px; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px;
+  }
+  .card { cursor: pointer; border-radius: 6px; overflow: hidden; background: var(--panel); }
+  .card:hover { outline: 1px solid var(--accent); }
+  .card.watched { opacity: .4; }
+  .thumb {
+    position: relative; aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center;
+    color: rgba(255,255,255,.55); font-size: 12px; letter-spacing: .1em;
+  }
+  .thumb .tl, .thumb .tr, .thumb .br { position: absolute; display: flex; gap: 4px; }
+  .thumb .tl { top: 6px; left: 6px; }
+  .thumb .tr { top: 6px; right: 6px; }
+  .thumb .br { bottom: 6px; right: 6px; }
+  .tag { padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 700; color: #fff; letter-spacing: 0; }
+  .tag.new { background: var(--new); }
+  .tag.watched { background: #555c6b; }
+  .tag.hd { background: var(--hd); }
+  .tag.private { background: var(--private); }
+  .tag.dur { background: rgba(0,0,0,.75); font-weight: 500; }
+  .watched-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: #d33; }
+  .meta { padding: 6px 8px 8px; }
+  .meta .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px; }
+  .meta .sub { color: var(--muted); font-size: 12px; display: flex; gap: 6px; }
+  .meta .sub .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { color: var(--muted); padding: 40px; text-align: center; grid-column: 1 / -1; }
+
+  /* 独自の名前・タグ・得点（4.8）のカード表示 */
+  .meta .title.custom { font-weight: 600; font-size: 14px; margin-bottom: 1px; }
+  .meta .orig { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px; }
+  .meta .annot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 5px; }
+  .utag { font-size: 10px; padding: 0 6px; border-radius: 8px; background: #2f3a52; color: #c5d3f0; }
+  .mini-stars { font-size: 11px; color: #f5c542; letter-spacing: -1px; }
+  .mini-stars i { font-style: normal; color: #444b5a; }
+  .unwatch { margin-left: auto; background: none; border: none; padding: 0; color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .unwatch:hover { color: var(--text); text-decoration: underline; }
+
+  /* ページ送り（100 件ずつ） */
+  .pager { display: flex; justify-content: center; align-items: center; gap: 4px; margin-bottom: 14px; }
+  .pager.bottom { margin: 18px 0 6px; }
+  .pager button {
+    min-width: 32px; padding: 4px 8px; border-radius: 4px;
+    border: 1px solid var(--line); background: var(--panel2);
+  }
+  .pager button.step { padding: 4px 12px; }
+  .pager button:hover:not(:disabled) { border-color: var(--accent); }
+  .pager button:disabled { opacity: .4; cursor: default; }
+  .pager button.cur, .pager button.cur:disabled { background: var(--accent); border-color: var(--accent); color: #fff; opacity: 1; }
+  /* 個人の全動画でまだサイトから取得していないページ */
+  .pager button.unfetched:not(.cur) { border-style: dashed; color: var(--muted); }
+  .pager .gap { color: var(--muted); padding: 0 4px; }
+  /* 個人の全動画: サイトから取得中 */
+  .fetching .bar { display: inline-block; width: 120px; height: 4px; background: var(--line); vertical-align: middle; margin-left: 8px; border-radius: 2px; overflow: hidden; }
+  .fetching .bar i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+
+  /* チップ（タグ） */
+  .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 9px;
+    border-radius: 11px; background: #2f3a52; font-size: 12px; border: 1px solid transparent;
+  }
+  .chip button { background: none; border: none; padding: 0 4px; color: var(--muted); line-height: 1; }
+  .chip button:hover { color: var(--text); }
+  button.chip.filter { padding: 2px 10px; background: var(--panel2); border-color: var(--line); }
+  button.chip.filter.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.chip.filter .n { color: var(--muted); margin-left: 4px; }
+  button.chip.filter.on .n { color: rgba(255,255,255,.75); }
+  .txt { padding: 4px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; font: inherit; }
+
+  /* 整理した動画 */
+  .org { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .org .toolbar { flex-wrap: wrap; }
+
+  /* サイト表示 */
+  .appbar {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px; flex: none;
+    background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  .icon-btn { width: 30px; height: 27px; border: 1px solid var(--line); background: var(--panel2); border-radius: 4px; font-size: 11px; }
+  .icon-btn:disabled { opacity: .35; cursor: default; }
+  .addr {
+    flex: 1; min-width: 0; padding: 5px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 14px;
+    font-family: Consolas, "Courier New", monospace; font-size: 12px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .addr b { color: var(--text); font-weight: normal; }
+  .adblock { display: flex; align-items: center; gap: 5px; color: var(--hd); font-size: 12px; white-space: nowrap; }
+  .adblock::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--hd); }
+  .metabar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; padding: 7px 12px; flex: none;
+    background: #20242d; border-bottom: 1px solid var(--line); min-height: 42px;
+  }
+  .metabar .field { display: flex; align-items: center; gap: 6px; }
+  .metabar .lbl { color: var(--muted); font-size: 12px; }
+  .metabar .hint { color: var(--muted); font-size: 12px; }
+  .metabar .name-in { width: 240px; }
+  .metabar .tag-in { width: 140px; }
+  .stars { display: flex; }
+  .star { background: none; border: none; padding: 0 1px; font-size: 19px; line-height: 1; color: #444b5a; }
+  .star.on { color: #f5c542; }
+  .star:hover { transform: scale(1.15); }
+  .site-body {
+    flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    background: #3a3d44; color: #c9ccd3;
+  }
+  .site-body .big { font-size: 16px; }
+  .site-body .small { color: #9ea3ad; font-size: 12px; }
+
+  /* 設定（見た目のみ） */
+  .settings { flex: 1; overflow-y: auto; padding: 24px 32px; }
+  .settings h2 { font-size: 15px; margin: 0 0 16px; font-weight: 600; }
+  .set-group { max-width: 580px; margin-bottom: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+  .set-group h3 { margin: 0; padding: 9px 14px; font-size: 12px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .set-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+  .set-row + .set-row { border-top: 1px solid var(--line); }
+  .set-row .lbl { flex: 1; }
+  .set-row .hint { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .set-row .num { width: 64px; text-align: right; }
+
+  .note {
+    position: fixed; right: 12px; bottom: 12px; max-width: 300px;
+    background: rgba(29,32,39,.95); border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px 10px; font-size: 11px; color: var(--muted); line-height: 1.6;
+  }
+  .note b { color: var(--new); }
+</style>
+</head>
+<body>
+<header>
+  <span class="app-name">TM Viewer</span>
+  <nav class="tabs">
+    <button class="tab active" data-view="feed">新着フィード</button>
+    <button class="tab" data-view="organized">整理した動画</button>
+    <button class="tab" data-view="site">サイト表示</button>
+    <button class="tab" data-view="settings">設定</button>
+  </nav>
+  <span class="user">ログイン中: <b id="me"></b></span>
+</header>
+
+<main class="view" id="view-feed">
+  <aside>
+    <div class="search"><input id="search" type="search" placeholder="名前で検索"></div>
+    <div class="people" id="people"></div>
+  </aside>
+
+  <section class="feed">
+    <div class="toolbar">
+      <button class="btn primary" id="refresh">更新</button>
+      <span class="progress" id="progress">待機中</span>
+      <label><input type="checkbox" id="viewableOnly" checked>見られる動画だけ</label>
+      <label><input type="checkbox" id="includeSubs" checked>購読を含める</label>
+      <span class="spacer"></span>
+      <span class="filter-label" id="filterLabel"></span>
+      <button class="btn" id="markAllRead">まとめて既読</button>
+    </div>
+    <div class="grid-wrap" id="feedWrap">
+      <div class="pager" id="pagerTop" hidden></div>
+      <div class="grid" id="grid"></div>
+      <div class="pager bottom" id="pagerBottom" hidden></div>
+    </div>
+  </section>
+</main>
+
+<!-- 整理した動画（4.8） -->
+<div class="view" id="view-organized" hidden>
+  <div class="org">
+    <div class="toolbar">
+      <span class="filter-label">タグ</span>
+      <div class="chips" id="orgTags"></div>
+      <span class="spacer"></span>
+      <label>得点
+        <select class="txt" id="orgMin">
+          <option value="0">指定なし</option>
+          <option value="5">★5</option>
+          <option value="4">★4 以上</option>
+          <option value="3">★3 以上</option>
+          <option value="2">★2 以上</option>
+          <option value="1">★1 以上</option>
+        </select>
+      </label>
+      <label>並べ替え
+        <select class="txt" id="orgSort">
+          <option value="score">得点順</option>
+          <option value="added">付けた順</option>
+        </select>
+      </label>
+      <span class="filter-label" id="orgCount"></span>
+    </div>
+    <div class="grid-wrap" id="orgWrap">
+      <div class="pager" id="orgPagerTop" hidden></div>
+      <div class="grid" id="orgGrid"></div>
+      <div class="pager bottom" id="orgPagerBottom" hidden></div>
+    </div>
+  </div>
+</div>
+
+<!-- サイト表示: 実サイトの代わりにプレースホルダーを置く -->
+<div class="view col" id="view-site" hidden>
+  <div class="appbar">
+    <button class="btn" id="siteToFeed">← フィードへ戻る</button>
+    <button class="icon-btn" id="siteBack" title="戻る">◀</button>
+    <button class="icon-btn" id="siteFwd" title="進む">▶</button>
+    <div class="addr" id="siteAddr"></div>
+    <span class="adblock" id="adblock">広告遮断中</span>
+  </div>
+  <div class="metabar" id="metabar"></div>
+  <div class="site-body" id="siteBody"></div>
+</div>
+
+<!-- 設定（見た目のみ） -->
+<div class="view" id="view-settings" hidden>
+  <div class="settings">
+    <h2>設定</h2>
+    <div class="set-group">
+      <h3>取得</h3>
+      <div class="set-row">
+        <span class="lbl">取得の間隔<span class="hint">1 件取得するごとに待つ時間</span></span>
+        <input class="txt num" type="number" value="2" min="1"> 秒
+      </div>
+      <div class="set-row">
+        <span class="lbl">再取得までの待ち（キャッシュ）<span class="hint">この時間内に取得したユーザーは取り直さない</span></span>
+        <input class="txt num" type="number" value="30" min="0"> 分
+      </div>
+    </div>
+    <div class="set-group">
+      <h3>整理データ（名前・タグ・得点）</h3>
+      <div class="set-row">
+        <span class="lbl">書き出し・読み込み<span class="hint">JSON ファイル。PC の入れ替え・故障に備えて</span></span>
+        <button class="btn">書き出し</button>
+        <button class="btn">読み込み</button>
+      </div>
+    </div>
+    <div class="set-group">
+      <h3>その他</h3>
+      <div class="set-row"><span class="lbl">視聴履歴</span><button class="btn">履歴を消す</button></div>
+      <div class="set-row"><span class="lbl">ログイン</span><button class="btn">ログアウト</button></div>
+      <div class="set-row"><span class="lbl">バージョン</span><span class="filter-label">0.1.0（モック）</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="note" id="note">
+  <b>モック（ダミーデータ）</b><br>
+  カードをクリック: 視聴済みにしてサイト表示で開く（「未視聴に戻す」で戻す）<br>
+  一覧は 100 件ずつ。上下の「前へ / 1 2 3 / 次へ」でページ送り<br>
+  左の名前をクリック: その人の全動画。未取得のページ（点線）へ進むとサイトから取得<br>
+  左の目アイコン: その人を全体フィードから非表示（もう一度で戻す）<br>
+  更新: 取得進捗の演出のみ / まとめて既読: 表示中の NEW と未読数を消す<br>
+  名前・タグ・得点: サイト表示の上部バーで付ける（画面内だけ、保存しない）
+</div>
+
+<script>
+'use strict';
+
+// ---- ダミーデータ生成（毎回同じ結果になるよう固定シードの乱数） ----
+let seed = 20260928;
+function rand() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+function pick(arr) { return arr[Math.floor(rand() * arr.length)]; }
+
+const ME = 'sample_me';
+const FRIENDS = ['friend_aoi', 'friend_beni', 'friend_chika', 'friend_daichi',
+  'friend_emi', 'friend_fumi', 'friend_goro', 'friend_hana',
+  'friend_ichiro', 'friend_jun', 'friend_kei'];
+const SUBS = ['sub_kaze', 'sub_mori', 'sub_sora']; // フレンドでない購読ユーザー
+const USERS = FRIENDS.map(n => ({ name: n, kind: 'friend' }))
+  .concat(SUBS.map(n => ({ name: n, kind: 'sub' })));
+const REL = ['1時間前', '3時間前', '8時間前', '1日前', '2日前', '3日前', '5日前', '1週間前', '2週間前', '1ヶ月前'];
+const HUES = [210, 260, 170, 30, 330, 120, 190, 290];
+
+// フィードは各ユーザーの 1 ページ目（18 件）だけ（4.2）。14 人 × 18 件 = 252 件。
+const PAGE_SIZE = 18;
+const slots = USERS.flatMap(u => Array(PAGE_SIZE).fill(u));
+for (let i = slots.length - 1; i > 0; i--) { // 投稿者の並びを混ぜる
+  const j = Math.floor(rand() * (i + 1));
+  [slots[i], slots[j]] = [slots[j], slots[i]];
+}
+const VIDEO_COUNT = slots.length;
+const videos = [];
+let id = 5_214_000;
+for (let i = 0; i < VIDEO_COUNT; i++) {
+  id -= 1 + Math.floor(rand() * 40); // 新しい順に ID が減っていく
+  const user = slots[i];
+  const sec = 30 + Math.floor(rand() * 1500);
+  videos.push({
+    id,
+    title: 'サンプル動画タイトル ' + (1000 + Math.floor(rand() * 9000)),
+    user: user.name,
+    kind: user.kind,
+    duration: Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'),
+    hd: rand() < 0.45,
+    private: rand() < 0.25,
+    rel: REL[Math.floor(i * REL.length / VIDEO_COUNT)], // 上ほど新しい相対日付
+    isNew: i < 22 && rand() < 0.75, // 前回開いた時点で未取得だった扱い
+    hue: pick(HUES),
+  });
+}
+videos.sort((a, b) => b.id - a.id);
+
+// フィード（1 ページ目）には出てこない古い動画。整理した動画からだけ開ける例。
+const extraVideos = [{
+  id: 4_987_321, title: 'サンプル動画タイトル 7777', user: 'friend_beni', kind: 'friend',
+  duration: '12:04', hd: true, private: false, rel: '3ヶ月前', isNew: false, hue: 250, old: true,
+}];
+const usedIds = new Set(videos.concat(extraVideos).map(v => v.id));
+
+// ---- 個人の全動画（4.2）: 左一覧で人を選んだときだけ、表示に足りないサイトのページを取りに行く ----
+// モックでは人ごとの全動画（150〜300 件）を最初に作っておき、「取得済みのサイトページ数」だけを管理する。
+// 1 ページ目（18 件）はフィードで取得済みの扱い。
+const PER_PAGE = 100;       // アプリの 1 画面に出す件数（4.2 / 4.8）
+const FETCH_INTERVAL = 300; // 本実装は 1 件ごとに 2 秒（4.4）。モックでは待ち時間を短縮
+const OLD_REL = ['1ヶ月前', '2ヶ月前', '3ヶ月前', '半年前', '1年前', '2年前'];
+const persons = new Map();  // ユーザー名 -> { all: 全動画（新しい順）, loaded: 取得済みのサイトページ数 }
+
+function hashStr(s) { let h = 7; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 1000003; return h; }
+function personInfo(name) {
+  if (persons.has(name)) return persons.get(name);
+  const u = USERS.find(x => x.name === name);
+  const own = videos.filter(v => v.user === name); // フィードに出ている 1 ページ目
+  const total = 150 + hashStr(name) % 151;
+  let vid = Math.min(...own.map(v => v.id));
+  let r = hashStr(name + ':old') || 1;
+  const rr = () => { r = (r * 16807) % 2147483647; return r / 2147483647; };
+  const old = [];
+  for (let k = 0; own.length + k < total; k++) {
+    vid -= 50 + Math.floor(rr() * 2500);
+    while (usedIds.has(vid)) vid--;
+    usedIds.add(vid);
+    const sec = 30 + Math.floor(rr() * 1500);
+    old.push({
+      id: vid,
+      title: 'サンプル動画タイトル ' + (1000 + Math.floor(rr() * 9000)),
+      user: name, kind: u.kind,
+      duration: Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'),
+      hd: rr() < 0.4, private: rr() < 0.2,
+      rel: OLD_REL[Math.min(OLD_REL.length - 1, Math.floor(k / 40))],
+      isNew: false, hue: HUES[Math.floor(rr() * HUES.length)], old: true,
+    });
+  }
+  const p = { all: own.concat(old), loaded: 1 };
+  persons.set(name, p);
+  return p;
+}
+function sitePages(p) { return Math.ceil(p.all.length / PAGE_SIZE); }
+// 絞り込み後の page ページ目を出すのに必要なサイトのページ数
+function pagesNeeded(p, list, page) {
+  const last = list[Math.min(list.length, page * PER_PAGE) - 1];
+  return last ? Math.ceil((p.all.indexOf(last) + 1) / PAGE_SIZE) : 0;
+}
+
+// 取得中のジョブ（同時に 1 つだけ）。サイトのページを 1 つずつ間隔を空けて取る演出。
+let fetchJob = null; // { name, total, done, timer }
+function startFetch(name, need) {
+  const p = personInfo(name);
+  fetchJob = { name, total: need - p.loaded, done: 0, timer: 0 };
+  const step = () => {
+    p.loaded++;
+    fetchJob.done++;
+    if (p.loaded >= need) {
+      fetchJob = null;
+      if (currentView === 'feed') { render(); $('feedWrap').scrollTop = 0; }
+    } else {
+      fetchJob.timer = setTimeout(step, FETCH_INTERVAL);
+      if (currentView === 'feed') renderGrid();
+    }
+  };
+  fetchJob.timer = setTimeout(step, FETCH_INTERVAL);
+}
+function cancelFetch() {
+  if (fetchJob) { clearTimeout(fetchJob.timer); fetchJob = null; } // 取得済みのページはそのまま残る
+}
+function findVideo(id) {
+  if (!Number.isFinite(id)) return null;
+  const v = videos.find(x => x.id === id) || extraVideos.find(x => x.id === id);
+  if (v) return v;
+  for (const p of persons.values()) { const x = p.all.find(y => y.id === id); if (x) return x; }
+  return null;
+}
+
+// ---- 独自の名前・タグ・得点（4.8）: 画面内の状態のみ、保存しない ----
+const metas = new Map();   // 動画ID -> { name, tags: [], score: 0〜5, at: 付けた順の番号 }
+let metaSeq = 0;
+function getMeta(id) { return metas.get(id) || { name: '', tags: [], score: 0, at: 0 }; }
+function updateMeta(id, fn) {
+  const m = metas.get(id) || { name: '', tags: [], score: 0, at: 0 };
+  fn(m);
+  // どれも空になったら整理した動画から外す
+  if (!m.name.trim() && m.tags.length === 0 && !m.score) { metas.delete(id); return; }
+  if (!metas.has(id)) { m.at = ++metaSeq; metas.set(id, m); }
+}
+// 初期表示用のダミー整理データ
+updateMeta(videos[2].id, m => { m.name = 'お気に入りの回'; m.tags = ['旅行', 'あとで見る']; m.score = 5; });
+updateMeta(videos[7].id, m => { m.tags = ['料理']; m.score = 4; });
+updateMeta(extraVideos[0].id, m => { m.name = '昔の名作'; m.tags = ['旅行']; m.score = 5; });
+updateMeta(videos[12].id, m => { m.name = '二回目も良かった'; m.score = 3; });
+updateMeta(videos[20].id, m => { m.tags = ['あとで見る']; });
+
+// ---- 状態 ----
+const state = {
+  selected: null,          // null = すべて
+  page: 1,                 // 表示中のページ（100 件ずつ）
+  query: '',
+  viewableOnly: true,
+  includeSubs: true,
+  watched: new Set(),      // 視聴済みの動画ID（4.6）
+  read: new Set(),         // 「まとめて既読」で NEW を外した動画ID
+  muted: new Set(),        // 非表示（ミュート）にしたユーザー名。全体フィードから除外する
+};
+
+// 目アイコン（表示中 / 非表示中）。ミュートは全体フィードから外すだけの位置づけ。
+const EYE_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+const $ = id => document.getElementById(id);
+$('me').textContent = ME;
+
+// 見られる動画だけ = 公開 + フレンドの PRIVATE（フレンドでない購読ユーザーの PRIVATE を隠す）
+function passesToggles(v) {
+  if (!state.includeSubs && v.kind === 'sub') return false;
+  if (state.viewableOnly && v.private && v.kind !== 'friend') return false;
+  return true;
+}
+function isUnread(v) { return v.isNew && !state.watched.has(v.id) && !state.read.has(v.id); }
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+// ---- 左の一覧 ----
+function renderPeople() {
+  const pool = videos.filter(passesToggles);
+  // すべて（name==null）は非表示ユーザーを除いて数える。個人行はその人自身の未読数。
+  const count = name => pool.filter(v =>
+    (name == null ? !state.muted.has(v.user) : v.user === name) && isUnread(v)).length;
+  const box = $('people');
+  box.textContent = '';
+
+  // name != null の行には目アイコン（非表示トグル）を付ける
+  const row = (label, name, n, extraCls) => {
+    const muted = name != null && state.muted.has(name);
+    const b = el('button', 'person' + (extraCls ? ' ' + extraCls : '') + (muted ? ' muted' : ''));
+    if (state.selected === name) b.classList.add('selected');
+    if (n === 0) b.classList.add('zero');
+    b.append(el('span', 'name', label));
+    if (name != null) {
+      const eye = el('span', 'eye' + (muted ? ' off' : ''));
+      eye.innerHTML = muted ? EYE_OFF : EYE_ON;
+      eye.title = muted ? '非表示中（クリックで全体フィードに戻す）' : 'クリックで全体フィードから非表示';
+      eye.onclick = e => {
+        e.stopPropagation(); // 名前クリックの絞り込みとは分ける
+        if (muted) state.muted.delete(name); else state.muted.add(name);
+        render();
+      };
+      b.append(eye);
+    }
+    b.append(el('span', 'badge' + (n === 0 ? ' zero' : ''), String(n)));
+    b.onclick = () => selectPerson(name);
+    return b;
+  };
+
+  box.append(row('すべて', null, count(null), 'all'));
+
+  const q = state.query.trim().toLowerCase();
+  const groups = [['フレンド', 'friend']];
+  if (state.includeSubs) groups.push(['購読', 'sub']);
+  for (const [label, kind] of groups) {
+    const list = USERS.filter(u => u.kind === kind && (!q || u.name.toLowerCase().includes(q)))
+      .map(u => ({ name: u.name, n: count(u.name) }))
+      .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)); // 未読の多い順
+    box.append(el('div', 'group-head', label + '（' + list.length + '）'));
+    for (const u of list) box.append(row(u.name, u.name, u.n));
+  }
+}
+
+// ---- 右のグリッド ----
+// カード 1 枚。フィードと整理した動画で共用。dim=false なら視聴済みでも薄くしない。
+function makeCard(v, dim) {
+  const watched = state.watched.has(v.id);
+  const m = getMeta(v.id);
+  const card = el('div', 'card' + (watched && dim ? ' watched' : ''));
+  card.title = 'ID ' + v.id;
+
+  const thumb = el('div', 'thumb', 'サムネイル');
+  thumb.style.background = `linear-gradient(135deg, hsl(${v.hue} 45% 32%), hsl(${(v.hue + 40) % 360} 40% 18%))`;
+  const tl = el('div', 'tl');
+  if (watched) tl.append(el('span', 'tag watched', '視聴済み'));
+  else if (isUnread(v)) tl.append(el('span', 'tag new', 'NEW'));
+  const tr = el('div', 'tr');
+  if (v.hd) tr.append(el('span', 'tag hd', 'HD'));
+  if (v.private) tr.append(el('span', 'tag private', 'PRIVATE'));
+  const br = el('div', 'br');
+  br.append(el('span', 'tag dur', v.duration));
+  thumb.append(tl, tr, br);
+  if (watched) thumb.append(el('div', 'watched-bar'));
+
+  const meta = el('div', 'meta');
+  // 独自の名前があれば大きく表示し、元のタイトルを小さく併記（4.8）
+  if (m.name.trim()) {
+    const t = el('div', 'title custom', m.name.trim());
+    t.title = m.name.trim();
+    meta.append(t, el('div', 'orig', v.title));
+  } else {
+    meta.append(el('div', 'title', v.title));
+  }
+  const sub = el('div', 'sub');
+  sub.append(el('span', 'who', v.user + (v.kind === 'sub' ? '（購読）' : '')), el('span', null, '・' + v.rel));
+  if (watched) {
+    const undo = el('button', 'unwatch', '未視聴に戻す');
+    undo.onclick = e => { e.stopPropagation(); state.watched.delete(v.id); rerender(); };
+    sub.append(undo);
+  }
+  meta.append(sub);
+  if (m.tags.length || m.score) {
+    const annot = el('div', 'annot');
+    if (m.score) {
+      const s = el('span', 'mini-stars', '★'.repeat(m.score));
+      s.append(el('i', null, '★'.repeat(5 - m.score)));
+      annot.append(s);
+    }
+    for (const t of m.tags) annot.append(el('span', 'utag', t));
+    meta.append(annot);
+  }
+
+  card.append(thumb, meta);
+  // クリックで視聴済みにし、サイト表示でその動画を開く（4.2 / 4.6）
+  card.onclick = () => openVideo(v.id);
+  return card;
+}
+
+// ---- ページ送り（100 件ずつ。フィード・個人の全動画・整理した動画で共用） ----
+function pageCount(n) { return Math.max(1, Math.ceil(n / PER_PAGE)); }
+function clampPage(page, pages) { return Math.min(Math.max(1, page), pages); }
+function rangeText(n, page) {
+  if (n === 0) return '0 件';
+  const s = (page - 1) * PER_PAGE;
+  return '全 ' + n + ' 件中 ' + (s + 1) + '〜' + Math.min(n, s + PER_PAGE) + ' 件目';
+}
+// 「前へ / 1 2 3 … / 次へ」。1 ページしかないときは出さない。
+// opt.disabled: 取得中など操作させないとき。opt.fetched(q): false なら未取得のページとして点線で出す。
+function renderPager(box, page, pages, go, opt = {}) {
+  box.textContent = '';
+  box.hidden = pages <= 1;
+  if (pages <= 1) return;
+  const btn = (label, q, cls) => {
+    const b = el('button', cls || null, label);
+    b.disabled = !!opt.disabled || q < 1 || q > pages || q === page;
+    b.onclick = () => go(q);
+    box.append(b);
+    return b;
+  };
+  btn('前へ', page - 1, 'step');
+  const nums = [];
+  for (let q = 1; q <= pages; q++) {
+    if (pages <= 9 || q === 1 || q === pages || Math.abs(q - page) <= 2) nums.push(q);
+  }
+  let prev = 0;
+  for (const q of nums) {
+    if (q - prev > 1) box.append(el('span', 'gap', '…'));
+    const unfetched = opt.fetched && !opt.fetched(q);
+    const b = btn(String(q), q, (q === page ? 'cur' : '') + (unfetched ? ' unfetched' : ''));
+    if (unfetched) b.title = '未取得（開くとサイトから取得します）';
+    prev = q;
+  }
+  btn('次へ', page + 1, 'step');
+}
+function goFeedPage(q) { state.page = q; renderGrid(); $('feedWrap').scrollTop = 0; }
+function selectPerson(name) {
+  if (state.selected !== name) cancelFetch();
+  state.selected = name;
+  state.page = 1;
+  render();
+  $('feedWrap').scrollTop = 0;
+}
+
+function renderGrid() {
+  if (state.selected == null) renderAllGrid(); else renderPersonGrid(state.selected);
+}
+function drawCards(list) {
+  const grid = $('grid');
+  grid.textContent = '';
+  if (list.length === 0) grid.append(el('div', 'empty', '表示する動画がありません'));
+  for (const v of list) grid.append(makeCard(v, true));
+}
+function drawFeedPagers(pages, opt) {
+  renderPager($('pagerTop'), state.page, pages, goFeedPage, opt);
+  renderPager($('pagerBottom'), state.page, pages, goFeedPage, opt);
+}
+
+// すべて: 取得済みのフィードを分けて出すだけ（追加の取得はしない）。
+// 非表示ユーザーと切替（見られる動画だけ・購読）を除いた件数でページを数える。
+function renderAllGrid() {
+  const list = videos.filter(v => passesToggles(v) && !state.muted.has(v.user));
+  const pages = pageCount(list.length);
+  state.page = clampPage(state.page, pages);
+  const s = (state.page - 1) * PER_PAGE;
+  $('filterLabel').textContent = 'すべて ' + rangeText(list.length, state.page);
+  drawCards(list.slice(s, s + PER_PAGE));
+  drawFeedPagers(pages);
+}
+
+// 個人の全動画: その人が非表示でも見える。足りないサイトのページだけ取りに行ってから表示する。
+function renderPersonGrid(name) {
+  const p = personInfo(name);
+  const list = p.all.filter(passesToggles);
+  const pages = pageCount(list.length);
+  state.page = clampPage(state.page, pages);
+  const need = pagesNeeded(p, list, state.page);
+  if (!fetchJob && need > p.loaded) startFetch(name, need);
+  $('filterLabel').textContent = name + ' の動画 ' + rangeText(list.length, state.page)
+    + '（サイト ' + p.loaded + '/' + sitePages(p) + ' ページ取得済み）';
+  const fetched = q => pagesNeeded(p, list, q) <= p.loaded;
+  if (fetchJob && fetchJob.name === name) {
+    const grid = $('grid');
+    grid.textContent = '';
+    const box = el('div', 'empty fetching', 'サイトから取得中 ' + Math.min(fetchJob.done + 1, fetchJob.total) + '/' + fetchJob.total);
+    const bar = el('span', 'bar'); const fill = el('i');
+    fill.style.width = (fetchJob.done / fetchJob.total * 100) + '%';
+    bar.append(fill);
+    box.append(bar);
+    grid.append(box);
+    drawFeedPagers(pages, { disabled: true, fetched });
+    return;
+  }
+  const s = (state.page - 1) * PER_PAGE;
+  drawCards(list.slice(s, s + PER_PAGE));
+  drawFeedPagers(pages, { fetched });
+}
+
+function render() { renderPeople(); renderGrid(); }
+
+// ---- ツールバー ----
+$('search').addEventListener('input', e => { state.query = e.target.value; renderPeople(); });
+$('viewableOnly').addEventListener('change', e => { state.viewableOnly = e.target.checked; render(); });
+$('includeSubs').addEventListener('change', e => {
+  state.includeSubs = e.target.checked;
+  if (!state.includeSubs && SUBS.includes(state.selected)) { selectPerson(null); return; }
+  render();
+});
+$('markAllRead').addEventListener('click', () => {
+  // 表示中（絞り込み・切替を反映した範囲）の NEW を外す。視聴済みにはしない。
+  for (const v of videos) {
+    if (passesToggles(v)
+      && (state.selected == null ? !state.muted.has(v.user) : v.user === state.selected)) state.read.add(v.id);
+  }
+  render();
+});
+
+// 更新: 取得中 n/N が進むだけの演出（実際の取得はしない）
+$('refresh').addEventListener('click', () => {
+  const btn = $('refresh');
+  const total = state.includeSubs ? USERS.length + 2 : FRIENDS.length + 1; // 一覧ページ + 各ユーザー
+  let n = 0;
+  btn.disabled = true;
+  const prog = $('progress');
+  const bar = el('span', 'bar'); const fill = el('i'); bar.append(fill);
+  const tick = () => {
+    n++;
+    prog.textContent = '取得中 ' + n + '/' + total;
+    fill.style.width = (n / total * 100) + '%';
+    prog.append(bar);
+    if (n < total) setTimeout(tick, 250);
+    else setTimeout(() => {
+      const t = new Date();
+      prog.textContent = '更新完了 ' + String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+      btn.disabled = false;
+    }, 400);
+  };
+  tick();
+});
+
+// ---- 上部タブ ----
+const VIEWS = ['feed', 'organized', 'site', 'settings'];
+let currentView = 'feed';
+function switchView(name) {
+  currentView = name;
+  for (const t of document.querySelectorAll('.tab')) t.classList.toggle('active', t.dataset.view === name);
+  for (const v of VIEWS) $('view-' + v).hidden = v !== name;
+  $('note').hidden = name !== 'feed';
+  rerender();
+}
+function rerender() {
+  if (currentView === 'feed') render();
+  else if (currentView === 'organized') renderOrganized();
+  else if (currentView === 'site') renderSite();
+}
+for (const t of document.querySelectorAll('.tab')) t.addEventListener('click', () => switchView(t.dataset.view));
+
+// ---- サイト表示（実サイトは開かない。プレースホルダーのみ） ----
+const site = { hist: [null], idx: 0 }; // 開いたページの履歴。null = トップページ
+function openVideo(id) {
+  state.watched.add(id);
+  site.hist = site.hist.slice(0, site.idx + 1);
+  site.hist.push(id);
+  site.idx = site.hist.length - 1;
+  switchView('site');
+}
+function renderSite() {
+  const id = site.hist[site.idx];
+  const v = id != null ? findVideo(id) : null;
+  $('siteBack').disabled = site.idx === 0;
+  $('siteFwd').disabled = site.idx >= site.hist.length - 1;
+  const addr = $('siteAddr');
+  addr.textContent = 'https://';
+  addr.append(el('b', null, 'tokyomotion.net/' + (v ? 'video/' + id : '')));
+  $('adblock').textContent = '広告遮断中（' + (v ? 3 + id % 9 : 4) + ' 件）';
+  const body = $('siteBody');
+  body.textContent = '';
+  body.append(el('div', 'big', 'ここにサイトのページが表示されます'),
+    el('div', 'small', v ? '動画ページ: ' + v.title + ' / ' + v.user : 'トップページ'));
+  renderMetabar(v);
+}
+
+// 開いている動画用の入力バー: 独自の名前・タグ・得点（4.8）
+function renderMetabar(v) {
+  const bar = $('metabar');
+  bar.textContent = '';
+  if (!v) {
+    bar.append(el('span', 'hint', '動画ページを開いているときに、名前・タグ・得点を付けられます（自分の PC 内だけに保存、サイトには送りません）'));
+    return;
+  }
+  const id = v.id;
+  const m = getMeta(id);
+
+  const nameF = el('label', 'field');
+  const nameIn = el('input', 'txt name-in');
+  nameIn.value = m.name;
+  nameIn.placeholder = v.title;
+  nameIn.oninput = () => updateMeta(id, x => { x.name = nameIn.value; });
+  nameF.append(el('span', 'lbl', '名前'), nameIn);
+
+  const tagF = el('div', 'field');
+  const chips = el('div', 'chips');
+  const tagIn = el('input', 'txt tag-in');
+  tagIn.placeholder = 'タグを追加（Enter）';
+  tagIn.setAttribute('list', 'tagList');
+  const dl = el('datalist'); dl.id = 'tagList';
+  const drawTags = () => {
+    chips.textContent = '';
+    for (const t of getMeta(id).tags) {
+      const c = el('span', 'chip', t);
+      const x = el('button', null, '×');
+      x.title = 'タグを外す';
+      x.onclick = () => { updateMeta(id, mm => { mm.tags = mm.tags.filter(y => y !== t); }); drawTags(); };
+      c.append(x);
+      chips.append(c);
+    }
+    dl.textContent = '';
+    for (const t of allTags()) { const o = el('option'); o.value = t; dl.append(o); }
+  };
+  tagIn.onkeydown = e => {
+    if (e.key !== 'Enter' || e.isComposing) return; // 日本語変換の確定 Enter では追加しない
+    const t = tagIn.value.trim();
+    tagIn.value = '';
+    if (!t) return;
+    updateMeta(id, mm => { if (!mm.tags.includes(t)) mm.tags.push(t); });
+    drawTags();
+  };
+  tagF.append(el('span', 'lbl', 'タグ'), chips, tagIn, dl);
+  drawTags();
+
+  const scoreF = el('div', 'field');
+  const stars = el('div', 'stars');
+  const drawStars = () => {
+    stars.textContent = '';
+    const s = getMeta(id).score;
+    for (let i = 1; i <= 5; i++) {
+      const b = el('button', 'star' + (i <= s ? ' on' : ''), '★');
+      b.title = i === s ? 'クリックで得点を外す' : '★' + i;
+      // 今と同じ星をもう一度押すと外す
+      b.onclick = () => { updateMeta(id, mm => { mm.score = mm.score === i ? 0 : i; }); drawStars(); };
+      stars.append(b);
+    }
+  };
+  scoreF.append(el('span', 'lbl', '得点'), stars);
+  drawStars();
+
+  bar.append(nameF, tagF, scoreF);
+}
+$('siteToFeed').addEventListener('click', () => switchView('feed'));
+$('siteBack').addEventListener('click', () => { if (site.idx > 0) { site.idx--; renderSite(); } });
+$('siteFwd').addEventListener('click', () => { if (site.idx < site.hist.length - 1) { site.idx++; renderSite(); } });
+
+// ---- 整理した動画（4.8） ----
+const org = { tag: null, min: 0, sort: 'score', page: 1 };
+function goOrgPage(q) { org.page = q; renderOrganized(); $('orgWrap').scrollTop = 0; }
+function allTags() {
+  return [...new Set([...metas.values()].flatMap(m => m.tags))].sort((a, b) => a.localeCompare(b, 'ja'));
+}
+function renderOrganized() {
+  const items = [...metas.entries()].map(([id, m]) => ({ v: findVideo(id), m })).filter(x => x.v);
+  const tags = allTags();
+  if (org.tag != null && !tags.includes(org.tag)) org.tag = null;
+
+  const box = $('orgTags');
+  box.textContent = '';
+  const chip = (label, tag, n) => {
+    const b = el('button', 'chip filter' + (org.tag === tag ? ' on' : ''), label);
+    if (n != null) b.append(el('span', 'n', String(n)));
+    b.onclick = () => { org.tag = tag; goOrgPage(1); };
+    box.append(b);
+  };
+  chip('すべて', null, null);
+  for (const t of tags) chip(t, t, items.filter(x => x.m.tags.includes(t)).length);
+
+  const list = items.filter(x => (org.tag == null || x.m.tags.includes(org.tag)) && x.m.score >= org.min);
+  if (org.sort === 'score') list.sort((a, b) => b.m.score - a.m.score || b.m.at - a.m.at);
+  else list.sort((a, b) => b.m.at - a.m.at); // 付けた順（新しく付けたものが上）
+  const pages = pageCount(list.length);
+  org.page = clampPage(org.page, pages);
+  const s = (org.page - 1) * PER_PAGE;
+  $('orgCount').textContent = rangeText(list.length, org.page);
+
+  const grid = $('orgGrid');
+  grid.textContent = '';
+  if (items.length === 0) grid.append(el('div', 'empty', 'まだ整理した動画はありません'));
+  else if (list.length === 0) grid.append(el('div', 'empty', '条件に合う動画がありません'));
+  for (const x of list.slice(s, s + PER_PAGE)) grid.append(makeCard(x.v, false));
+  renderPager($('orgPagerTop'), org.page, pages, goOrgPage);
+  renderPager($('orgPagerBottom'), org.page, pages, goOrgPage);
+}
+$('orgMin').addEventListener('change', e => { org.min = Number(e.target.value); goOrgPage(1); });
+$('orgSort').addEventListener('change', e => { org.sort = e.target.value; goOrgPage(1); });
+
+render();
+</script>
+</body>
+</html>

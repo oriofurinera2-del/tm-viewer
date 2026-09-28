@@ -1,0 +1,10 @@
+node_modules/
+dist/
+out/
+*.log
+
+# 個人の設定
+.claude/settings.local.json
+
+# 実ページの保存（除去前の生 HTML）は置かない。除去済みだけ test/fixtures/ に置く
+test/fixtures/raw/
