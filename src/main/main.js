@@ -157,7 +157,15 @@ ipcMain.handle('feed:refresh', async (_event, options) => {
 ipcMain.handle('feed:open', (_event, options) => feedService.openFeed(options));
 ipcMain.handle('feed:get', (_event, options) => feedService.getFeed(options));
 ipcMain.handle('feed:people', (_event, options) => feedService.getPeople(options));
-ipcMain.handle('feed:person-page', (_event, options) => feedService.getPersonPage(options));
+ipcMain.handle('feed:person-page', (event, options) => feedService.getPersonPage({
+  ...options,
+  onProgress: progress => event.sender.send('feed:person-progress', {
+    ...progress,
+    user: options?.user,
+    page: options?.page,
+    requestId: options?.requestId
+  })
+}));
 ipcMain.handle('feed:watch', (_event, id, watched) => {
   feedService.markWatched(id, watched !== false);
   return true;

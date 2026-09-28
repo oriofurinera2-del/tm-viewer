@@ -60,6 +60,7 @@ section { height: 100%; }
 #people > div { display: flex; gap: 4px; margin: 3px 0; }
 #people button { border: 0; background: transparent; color: inherit; padding: 5px; text-align: left; }
 #people button:first-child { flex: 1; }
+#people .person-pick.selected { background: #2c4d7c; border-radius: 4px; }
 #feed-content { flex: 1; overflow: auto; padding: 18px; }
 .feed-tools { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .feed-tools button, .pager button { padding: 6px 10px; border: 1px solid #3a4151; border-radius: 4px; background: #242833; }

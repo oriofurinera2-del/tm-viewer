@@ -23,6 +23,11 @@ contextBridge.exposeInMainWorld('tmViewer', {
     get: options => ipcRenderer.invoke('feed:get', options),
     people: options => ipcRenderer.invoke('feed:people', options),
     personPage: options => ipcRenderer.invoke('feed:person-page', options),
+    onPersonProgress: callback => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on('feed:person-progress', listener);
+      return () => ipcRenderer.removeListener('feed:person-progress', listener);
+    },
     watch: (id, watched) => ipcRenderer.invoke('feed:watch', id, watched),
     mute: (user, muted) => ipcRenderer.invoke('feed:mute', user, muted)
   }

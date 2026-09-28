@@ -177,9 +177,14 @@ test('個人の100件ページは必要な古いサイトページだけ取得�
     }
   });
 
-  const result = await h.service.getPersonPage({ user, page: 1 });
+  const progress = [];
+  const result = await h.service.getPersonPage({ user, page: 1, onProgress: value => progress.push(value) });
 
   assert.deepEqual(h.calls, [userVideosUrl(user, 2)]);
+  assert.deepEqual(progress, [
+    { loaded: 2, needed: 3 },
+    { loaded: 4, needed: 3, sitePage: 2 }
+  ]);
   assert.deepEqual(result.videos.map(video => video.id), [8, 7, 6]);
   assert.equal(h.store.cache()[user].videos.length, 4);
   assert.equal(h.store.cache()[user].allPagesFetchedAt, 1_000_000);

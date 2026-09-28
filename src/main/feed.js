@@ -269,7 +269,7 @@ class FeedService {
     this.saveState({ ...state, muted: [...users] });
   }
 
-  async getPersonPage({ user, page = 1, viewableOnly = true } = {}) {
+  async getPersonPage({ user, page = 1, viewableOnly = true, onProgress } = {}) {
     if (typeof user !== 'string' || !user) throw new TypeError('ユーザー名が必要です');
     const cache = this.store.loadFeedCache() || {};
     const entry = cache[user];
@@ -282,6 +282,9 @@ class FeedService {
     let lastSitePage = Number.isSafeInteger(entry.lastSitePage) ? entry.lastSitePage : null;
     const visibleCount = () => videos.filter(video => !viewableOnly || isViewable(video)).length;
     while (visibleCount() < neededCount) {
+      if (typeof onProgress === 'function') {
+        onProgress({ loaded: visibleCount(), needed: neededCount });
+      }
       let sitePage = 2;
       while (loadedPages.has(sitePage)) sitePage += 1;
       if (lastSitePage !== null && sitePage > lastSitePage) break;
@@ -294,6 +297,9 @@ class FeedService {
       const kind = videos[0]?.kind || 'friend';
       const enriched = mergeVideos(videos, received, user, kind, this.now());
       videos = mergeCachedPages(videos, enriched);
+      if (typeof onProgress === 'function') {
+        onProgress({ loaded: visibleCount(), needed: neededCount, sitePage });
+      }
     }
     cache[user] = {
       ...entry,
