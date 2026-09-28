@@ -72,14 +72,27 @@
 
     <section id="search" hidden>
       <div class="search-content">
-        <h1>検索</h1>
+        <p class="search-note">この検索は、TOKYO Motion のサイト内検索がうまく使えないときの代わりです。Google 経由なので基本的に動作は遅めです。また Google が拾えるのは公開ページだけなので、PRIVATE（非公開）動画は基本的に出てきません。</p>
         <form id="google-search-form" class="search-tools">
           <label class="visually-hidden" for="google-search-term">検索語</label>
-          <input id="google-search-term" type="search" autocomplete="off" placeholder="Google で探す語">
+          <input id="google-search-term" type="search" autocomplete="off" placeholder="キーワードだけ（例: ○○）">
           <button type="submit" id="google-search-submit">Googleで探す</button>
+          <button type="button" id="google-import-more" hidden>続きを取り込む</button>
+          <button type="button" id="google-clear">クリア</button>
+          <span id="google-spinner" class="spinner" aria-hidden="true" hidden></span>
+          <span id="google-search-status" role="status"></span>
         </form>
-        <p id="google-search-status" role="status"></p>
-        <div id="google-search-grid"></div>
+        <div class="search-modes">
+          <button type="button" id="google-mode-browse" data-gmode="browse" class="active">探す</button>
+          <button type="button" id="google-mode-cards" data-gmode="cards">取り込んだ動画</button>
+        </div>
+        <div id="google-browse">
+          <p class="search-hint">「Googleで探す」を押すと下に Google 検索が開き、次のページまで自動でたどって取り込みます。確認画面（CAPTCHA）が出たらこの画面で解いてから「続きを取り込む」を押してください。取り込んだ動画は「取り込んだ動画」に並びます。</p>
+          <div id="google-area" aria-label="Google 検索"></div>
+        </div>
+        <div id="google-cards" hidden>
+          <div id="google-search-grid"></div>
+        </div>
       </div>
     </section>
 

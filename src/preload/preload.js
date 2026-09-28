@@ -13,7 +13,33 @@ contextBridge.exposeInMainWorld('tmViewer', {
     }
   },
   google: {
-    search: term => ipcRenderer.invoke('google:search', term)
+    // 検索語を検索タブ内蔵の googleView に開く（DESIGN 4.10、案A）。累積はリセットされる。
+    show: term => ipcRenderer.invoke('google:show', term),
+    // 現在の googleView ページから自動ページ送りで取り込む（新規・CAPTCHA 後の再開に共用）。
+    importAll: () => ipcRenderer.invoke('google:import'),
+    // 累積（seen・裏取得）をクリアする。カードは renderer 側で消す。
+    clear: () => ipcRenderer.invoke('google:clear'),
+    // googleView の表示/非表示と、検索タブ「探す」領域への配置。
+    command: command => ipcRenderer.invoke('google:command', command),
+    setBounds: bounds => ipcRenderer.send('google:bounds', bounds),
+    // 解決できた動画カードの追記（累積）。
+    onCards: callback => {
+      const listener = (_event, batch) => callback(batch);
+      ipcRenderer.on('google:cards', listener);
+      return () => ipcRenderer.removeListener('google:cards', listener);
+    },
+    // 取り込みの進捗・停止（CAPTCHA など）の状態。
+    onStatus: callback => {
+      const listener = (_event, status) => callback(status);
+      ipcRenderer.on('google:status', listener);
+      return () => ipcRenderer.removeListener('google:status', listener);
+    },
+    // サムネ・投稿者・サイトタグの後入れ。
+    onEnrich: callback => {
+      const listener = (_event, value) => callback(value);
+      ipcRenderer.on('google:enrich', listener);
+      return () => ipcRenderer.removeListener('google:enrich', listener);
+    }
   },
   feed: {
     refresh: options => ipcRenderer.invoke('feed:refresh', options),
@@ -60,7 +86,7 @@ contextBridge.exposeInMainWorld('tmViewer', {
     }
   },
   download: {
-    add: id => ipcRenderer.invoke('download:add', id),
+    add: (id, meta) => ipcRenderer.invoke('download:add', id, meta),
     current: () => ipcRenderer.invoke('download:current'),
     cancel: id => ipcRenderer.invoke('download:cancel', id),
     retry: id => ipcRenderer.invoke('download:retry', id),

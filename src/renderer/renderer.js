@@ -23,6 +23,7 @@ function setView(name) {
   else if (name === 'organized') void drawOrganized();
   else if (name === 'downloads') renderDownloadsTab();
   else if (name === 'settings') void drawCredentials();
+  applyGoogleView();
 }
 function bounds() { const r = $('site-area').getBoundingClientRect(); site.setBounds({ width: r.width, height: r.height }); }
 function pager(id, current, pages, onGo) {
@@ -34,41 +35,127 @@ function pager(id, current, pages, onGo) {
   });
 }
 
+// ---- 検索タブの Google（DESIGN 4.10 案A）: 「探す」（googleView）と「取り込んだ動画」を切り替える ----
+// 取り込んだ結果はセッション中メモリで保持する（アプリ再起動で消える。Google 結果自体は保存しない）。
+const googleResults = new Map(); // id -> { id, url, title, thumb, user, siteTags }
+const googleCardEls = new Map(); // id -> カードの wrap 要素
+let googleMode = 'browse';
+// 取り込み中の表示（DESIGN 4.10）: スピナーと「今◯ページ目・現在◯件取り込み中…」を更新し続ける。
+let googleImporting = false;
+let googleLastPages = 0;
+function setGoogleImporting(on) {
+  googleImporting = on;
+  const spinner = $('google-spinner'); if (spinner) spinner.hidden = !on;
+}
+function googleImportingText(pages = googleLastPages) {
+  const head = Number.isInteger(pages) && pages > 0 ? `今 ${pages} ページ目・` : '';
+  return `${head}現在 ${googleResults.size} 件取り込み中…`;
+}
+
 async function googleResultCard(result) {
-  // 検索結果そのものは保存しない。既に利用者が付けた note だけを表示に重ねる。
+  // 検索結果そのものは保存しない。利用者が付けた note と、裏で後入れしたサムネ・投稿者・タグを重ねる。
   const context = await notes.context(result.id).catch(() => null);
+  const siteTags = Array.isArray(result.siteTags) ? result.siteTags : [];
   const video = {
     id: result.id,
     title: result.title,
-    user: context?.user || '',
-    thumb: context?.thumb || null,
-    duration: '', hd: false, private: false, ago: '', siteTags: [], siteTagsAt: 0,
+    user: result.user || context?.user || '',
+    thumb: result.thumb || context?.thumb || null,
+    duration: result.duration || '', hd: false, private: false, ago: '',
+    siteTags, siteTagsAt: siteTags.length ? Date.now() : 0,
     note: { name: context?.name || '', tags: Array.isArray(context?.tags) ? context.tags : [], score: context?.score || 0 }
   };
-  return videoCard(video, { url: result.url, sourceLabel: 'Google 検索の結果', preventTagFetch: true, markWatched: false });
+  // タグは裏取得（google.onEnrich）で後入れするため、カーソル時のタグ取得はしない。
+  const card = videoCard(video, { url: result.url, sourceLabel: 'Google 検索の結果', preventTagFetch: true, markWatched: false });
+  applyGoogleCardLoading(card, result);
+  return card;
 }
 
-async function renderGoogleResults(results) {
-  const grid = $('google-search-grid'); grid.textContent = '';
-  const cards = await Promise.all(results.map(googleResultCard));
-  cards.forEach(card => grid.append(card));
+// 裏取得（enrich）が終わるまでは、壊れた画像アイコンではなく「読み込み中」の見た目にする（DESIGN 4.10）。
+// enrich が届いたら実際のサムネ・タグに差し替える。失敗（サムネ無し）は無地プレースホルダで止める。
+function applyGoogleCardLoading(card, result) {
+  const img = card.querySelector('.video-card > img');
+  const tagsBox = card.querySelector('.site-tags');
+  if (!result.enriched) {
+    if (img) { img.removeAttribute('src'); img.classList.add('thumb-loading'); }
+    if (tagsBox) { tagsBox.textContent = '取得中…'; tagsBox.classList.add('tags-loading'); }
+  } else if (!result.thumb) {
+    if (img) { img.removeAttribute('src'); img.classList.add('thumb-empty'); }
+  }
 }
 
+function updateGoogleCardsLabel() {
+  const btn = $('google-mode-cards'); if (!btn) return;
+  btn.textContent = googleResults.size ? `取り込んだ動画 (${googleResults.size})` : '取り込んだ動画';
+}
+function clearGoogleResults() {
+  googleResults.clear(); googleCardEls.clear();
+  const grid = $('google-search-grid'); if (grid) grid.textContent = '';
+  updateGoogleCardsLabel();
+}
+// 解決できたカードを累積で追記する（id 重複は除く）。
+async function appendGoogleCards(batch) {
+  const grid = $('google-search-grid'); if (!grid) return;
+  for (const result of batch) {
+    if (!result || !Number.isInteger(result.id) || googleResults.has(result.id)) continue;
+    googleResults.set(result.id, result);
+    const card = await googleResultCard(result);
+    googleCardEls.set(result.id, card); grid.append(card);
+  }
+  updateGoogleCardsLabel();
+  // 取り込み中は件数を更新し続けて、進んでいることが見えるようにする。
+  if (googleImporting) $('google-search-status').textContent = googleImportingText();
+}
+// サムネ・投稿者・サイトタグの後入れ。該当カードだけ作り直して差し替える。
+async function enrichGoogleCard({ id, thumb, user, siteTags, duration }) {
+  const result = googleResults.get(id); const old = googleCardEls.get(id);
+  if (!result || !old) return;
+  if (thumb) result.thumb = thumb;
+  if (user) result.user = user;
+  if (duration) result.duration = duration;
+  if (Array.isArray(siteTags) && siteTags.length) result.siteTags = siteTags;
+  result.enriched = true; // 届いた時点で「読み込み中」を終える（サムネ無しでも回し続けない）
+  const card = await googleResultCard(result);
+  googleCardEls.set(id, card); old.replaceWith(card);
+}
+
+// 検索タブがアクティブで「探す」モードのときだけ googleView を表示する（DESIGN 4.10）。
+function sendGoogleBounds() {
+  const el = $('google-area'); if (!el) return;
+  const r = el.getBoundingClientRect();
+  google.setBounds({ x: r.left, y: r.top, width: r.width, height: r.height });
+}
+function applyGoogleView() {
+  if (!$('search').hidden && googleMode === 'browse') { sendGoogleBounds(); void google.command('show'); }
+  else void google.command('hide');
+}
+function setGoogleMode(mode) {
+  googleMode = mode === 'cards' ? 'cards' : 'browse';
+  $('google-browse').hidden = googleMode !== 'browse';
+  $('google-cards').hidden = googleMode !== 'cards';
+  document.querySelectorAll('[data-gmode]').forEach(b => b.classList.toggle('active', b.dataset.gmode === googleMode));
+  applyGoogleView();
+}
+
+// 新しい検索: 累積をリセットし、googleView に開いて自動ページ送りで取り込む。
 async function runGoogleSearch() {
   const term = $('google-search-term').value.trim();
   if (!term) return;
   const submit = $('google-search-submit'); const status = $('google-search-status');
-  submit.disabled = true; status.textContent = 'Google を検索中…'; void renderGoogleResults([]);
+  submit.disabled = true; $('google-import-more').hidden = true;
+  clearGoogleResults(); setGoogleMode('browse');
+  status.textContent = 'Google 検索を開いています…';
   try {
-    const result = await google.search(term);
+    const result = await google.show(term);
     if (result?.ok) {
-      await renderGoogleResults(Array.isArray(result.results) ? result.results : []);
-      status.textContent = result.results.length ? `${result.results.length} 件` : '該当する動画はありません。';
-    } else if (!result?.empty) {
-      status.textContent = result?.message || 'Googleの結果を読み取れませんでした。サイト検索を使ってください。';
+      googleLastPages = 0; setGoogleImporting(true);
+      status.textContent = googleImportingText(0);
+      void google.importAll();
+    } else {
+      status.textContent = 'Google 検索を開けませんでした。';
     }
   } catch {
-    status.textContent = 'Googleの結果を読み取れませんでした。サイト検索を使ってください。';
+    status.textContent = 'Google 検索を開けませんでした。';
   } finally { submit.disabled = false; }
 }
 // 独自タグの候補（既存の独自タグ）。編集欄を開くたびに使うので取得結果を軽くキャッシュする。
@@ -148,10 +235,13 @@ function videoCard(video, { url = `https://www.tokyomotion.net/video/${video.id}
   const b = document.createElement('div'); b.className = `video-card${video.watched ? ' watched' : ''}`; b.tabIndex = 0; b.setAttribute('role', 'button');
   const image = document.createElement('img'); image.alt = ''; image.src = video.thumb || '';
   attachThumbRotation(b, image, video);
+  // 動画の長さはサムネ右下に重ねて表示（フィード・整理・Google 取り込みで共通）。未取得なら隠す。
+  const dur = document.createElement('span'); dur.className = 'dur';
+  if (video.duration) dur.textContent = video.duration; else dur.hidden = true;
 
   const titleBox = document.createElement('div');
   const info = document.createElement('span'); info.className = 'card-user';
-  const nameSpan = document.createElement('span'); nameSpan.className = 'card-user-name'; nameSpan.textContent = `${video.user} ・ ${video.duration || ''}`;
+  const nameSpan = document.createElement('span'); nameSpan.className = 'card-user-name'; nameSpan.textContent = video.user;
   const posted = document.createElement('span'); posted.className = 'card-posted'; posted.textContent = postedLabel(video); posted.title = video.ago || '';
   info.append(avatar(video.user, video.avatar), nameSpan, posted);
   const badges = document.createElement('small'); badges.textContent = [sourceLabel, video.isNew && '新着', video.watched && '視聴済み', video.hd && '高画質', video.private && '非公開'].filter(Boolean).join(' '); badges.title = video.ago || '';
@@ -164,12 +254,15 @@ function videoCard(video, { url = `https://www.tokyomotion.net/video/${video.id}
   // 名前があれば元のタイトルより大きく、元のタイトルは小さく併記する（4.8）。
   function renderTitle() {
     titleBox.textContent = '';
+    const origTitle = video.title || '無題の動画';
+    // タイトルは省略表示なので、ホバーで全文が見えるよう title 属性を付ける（独自名があれば併記）。
+    titleBox.title = note.name ? `${note.name}｜${origTitle}` : origTitle;
     if (note.name) {
       const big = document.createElement('strong'); big.className = 'custom-title'; big.textContent = note.name;
-      const orig = document.createElement('span'); orig.className = 'orig-title'; orig.textContent = video.title || '無題の動画';
+      const orig = document.createElement('span'); orig.className = 'orig-title'; orig.textContent = origTitle;
       titleBox.append(big, orig);
     } else {
-      const strong = document.createElement('strong'); strong.textContent = video.title || '無題の動画';
+      const strong = document.createElement('strong'); strong.textContent = origTitle;
       titleBox.append(strong);
     }
   }
@@ -198,15 +291,15 @@ function videoCard(video, { url = `https://www.tokyomotion.net/video/${video.id}
   }
   renderTitle(); renderStars(); renderCustomTags();
 
-  if (video.user) b.append(image, titleBox, info, badges, starsBox, customTagsBox, siteTagsBox);
-  else b.append(image, titleBox, badges, starsBox, customTagsBox, siteTagsBox);
+  if (video.user) b.append(image, dur, titleBox, info, badges, starsBox, customTagsBox, siteTagsBox);
+  else b.append(image, dur, titleBox, badges, starsBox, customTagsBox, siteTagsBox);
   const openCard = async () => { if (markWatched) await feed.watch(video.id, true); await site.command('navigate', url); setView('site'); };
   b.onclick = () => void openCard();
   b.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openCard(); } };
 
   // ダウンロード（DESIGN 4.9）・編集（✎、4.8）。カードの中に入れず、上に重ねる。
   const saveBtn = document.createElement('button'); saveBtn.type = 'button'; saveBtn.className = 'card-download'; saveBtn.textContent = '保存'; saveBtn.title = 'この動画をダウンロード';
-  saveBtn.onclick = event => { event.stopPropagation(); void addDownload(download.add(video.id)); };
+  saveBtn.onclick = event => { event.stopPropagation(); void addDownload(download.add(video.id, { title: video.title, user: video.user })); };
   const editToggle = document.createElement('button'); editToggle.type = 'button'; editToggle.className = 'edit-toggle'; editToggle.textContent = '✎'; editToggle.title = '名前・タグを編集';
   let editPanel = null;
   editToggle.onclick = event => {
@@ -508,6 +601,44 @@ document.querySelectorAll('[data-view]').forEach(x => { x.onclick = () => setVie
 $('to-feed').onclick = () => setView('feed'); back.onclick = () => site.command('back'); forward.onclick = () => site.command('forward');
 $('address-form').onsubmit = event => { event.preventDefault(); site.command('navigate', $('address').value.trim()); };
 $('google-search-form').onsubmit = event => { event.preventDefault(); void runGoogleSearch(); };
+$('google-mode-browse').onclick = () => setGoogleMode('browse');
+$('google-mode-cards').onclick = () => setGoogleMode('cards');
+// CAPTCHA を解いた後などに、現在のページから続きを取り込む（累積は保つ）。
+$('google-import-more').onclick = () => {
+  $('google-import-more').hidden = true;
+  setGoogleImporting(true);
+  $('google-search-status').textContent = googleImportingText();
+  void google.importAll();
+};
+$('google-clear').onclick = async () => {
+  await google.clear().catch(() => {});
+  clearGoogleResults();
+  setGoogleImporting(false);
+  $('google-import-more').hidden = true;
+  $('google-search-status').textContent = 'クリアしました。';
+};
+google.onCards(batch => { if (Array.isArray(batch)) void appendGoogleCards(batch); });
+google.onEnrich(value => { if (value && Number.isInteger(value.id)) void enrichGoogleCard(value); });
+google.onStatus(status => {
+  const state = status?.state; const total = Number(status?.total) || 0; const pages = Number(status?.pages) || 0;
+  const el = $('google-search-status');
+  if (state === 'importing') {
+    googleLastPages = pages; setGoogleImporting(true);
+    el.textContent = googleImportingText(pages);
+    return;
+  }
+  setGoogleImporting(false); // done・limit・captcha・notready・error はここで止める
+  if (state === 'done') el.textContent = total ? `${total} 件を取り込みました。` : '該当する動画はありません。';
+  else if (state === 'limit') el.textContent = `上限（${pages} ページ）まで取り込みました（${total} 件）。`;
+  else if (state === 'captcha') {
+    el.textContent = '確認画面が出たので止めました。「探す」画面で解いてから「続きを取り込む」を押してください。';
+    $('google-import-more').hidden = false; setGoogleMode('browse');
+  } else if (state === 'notready') {
+    el.textContent = '検索結果ページが表示されていません。もう一度「Googleで探す」をお試しください。';
+  } else if (state === 'error') {
+    el.textContent = 'Google の結果を読み取れませんでした。';
+  }
+});
 async function refresh(auto = false) {
   $('refresh-feed').disabled = true; $('feed-progress').textContent = '取得中…';
   try {
@@ -541,6 +672,7 @@ feed.onPersonProgress(progress => {
   if (Number.isInteger(loaded) && loaded >= 0 && Number.isInteger(needed) && needed >= 0) $('feed-progress').textContent = `追加取得中 ${Math.min(loaded, needed)}/${needed}`;
 });
 new ResizeObserver(bounds).observe($('site-area')); bounds();
+new ResizeObserver(() => { if (!$('search').hidden && googleMode === 'browse') sendGoogleBounds(); }).observe($('google-area'));
 // 起動時（DESIGN 4.4）: 保存済みのフィードがあれば先にフィード画面で表示し、裏で 1 回だけ自動更新する。
 (async () => {
   const saved = await feed.get(opts()).catch(() => null);

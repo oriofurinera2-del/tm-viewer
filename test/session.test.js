@@ -10,6 +10,8 @@ const {
   createRequestHandler,
   enableVideoTagDebug,
   isAllowedUrl,
+  isGoogleHost,
+  isGoogleSearchPageUrl,
   isSiteUrl,
   isVideoTagRequest,
   readAllowlist
@@ -20,19 +22,52 @@ test('Google 検索 URL は空語を作らず、検索語を安全に組み立�
   assert.equal(buildGoogleSearchUrl('  '), null);
   assert.equal(
     buildGoogleSearchUrl('a&b 日本語'),
-    'https://www.google.com/search?q=site%3Atokyomotion.net%2Fvideo%2F+a%26b+%E6%97%A5%E6%9C%AC%E8%AA%9E'
+    'https://www.google.com/search?q=site%3Atokyomotion.net%2Fvideo%2F+a%26b+%E6%97%A5%E6%9C%AC%E8%AA%9E&safe=off'
   );
+  assert.equal(
+    buildGoogleSearchUrl(' site:tokyomotion.net/video/ a&b 日本語 '),
+    'https://www.google.com/search?q=site%3Atokyomotion.net%2Fvideo%2F+a%26b+%E6%97%A5%E6%9C%AC%E8%AA%9E&safe=off'
+  );
+  assert.equal(buildGoogleSearchUrl('site:tokyomotion.net/video/'), null);
 });
 
-test('Google のホストは1回の検索取得中だけ通し、通常の許可リストには加えない', () => {
+test('Google のホストは検索表示中だけ通し、通常の許可リストには加えない', () => {
   let active = false;
   const decisions = [];
   const handler = createRequestHandler([], { isGoogleSearchRequestActive: () => active });
+  // 検索表示中でないときは Google の描画・reCAPTCHA ホストも止める
   handler({ url: 'https://www.google.com/search?q=test' }, decision => decisions.push(decision));
+  handler({ url: 'https://www.gstatic.com/recaptcha/releases/x.js' }, decision => decisions.push(decision));
   active = true;
+  // 検索表示中は google.com / *.google.com / *.gstatic.com を通す
   handler({ url: 'https://www.google.com/search?q=test' }, decision => decisions.push(decision));
+  handler({ url: 'https://google.com/' }, decision => decisions.push(decision));
+  handler({ url: 'https://www.gstatic.com/recaptcha/releases/x.js' }, decision => decisions.push(decision));
+  // 検索表示中でも Google 以外は通さない
   handler({ url: 'https://example.test/' }, decision => decisions.push(decision));
-  assert.deepEqual(decisions, [{ cancel: true }, { cancel: false }, { cancel: true }]);
+  assert.deepEqual(decisions, [
+    { cancel: true }, { cancel: true },
+    { cancel: false }, { cancel: false }, { cancel: false },
+    { cancel: true }
+  ]);
+});
+
+test('isGoogleHost は google.com とそのサブドメイン・*.gstatic.com だけを検索ホストとする', () => {
+  for (const host of ['google.com', 'www.google.com', 'apis.google.com', 'www.gstatic.com']) {
+    assert.equal(isGoogleHost(host), true, host);
+  }
+  for (const host of ['gstatic.com', 'notgoogle.com', 'google.com.evil.example', 'example.com', '', null]) {
+    assert.equal(isGoogleHost(host), false, String(host));
+  }
+});
+
+test('isGoogleSearchPageUrl は Google の /search だけを取り込み対象とし、CAPTCHA・非 Google は除く', () => {
+  assert.equal(isGoogleSearchPageUrl('https://www.google.com/search?q=test'), true);
+  assert.equal(isGoogleSearchPageUrl('https://google.com/search?q=test'), true);
+  assert.equal(isGoogleSearchPageUrl('https://www.google.com/sorry/index?continue=x'), false);
+  assert.equal(isGoogleSearchPageUrl('https://www.google.com/'), false);
+  assert.equal(isGoogleSearchPageUrl('https://www.tokyomotion.net/video/1'), false);
+  assert.equal(isGoogleSearchPageUrl('not a url'), false);
 });
 
 test('サイト本体と www だけをサイト遷移として許可する', () => {

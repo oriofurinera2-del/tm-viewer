@@ -4,6 +4,10 @@ const fs = require('node:fs');
 
 const SITE_HOSTS = new Set(['tokyomotion.net', 'www.tokyomotion.net']);
 const GOOGLE_SEARCH_HOST = 'www.google.com';
+const GOOGLE_SITE_QUERY_PREFIX = 'site:tokyomotion.net/video/';
+// 検索表示中の Google ビューにだけ通すホスト（DESIGN 4.10）。描画と reCAPTCHA に要る。
+// 通常のサイト許可リストには入れない（検索表示中以外は通さない）。
+const GOOGLE_SEARCH_HOST_PATTERNS = Object.freeze(['google.com', '*.google.com', '*.gstatic.com']);
 
 // サイト表示の通信は許可リストのホストだけ通す（DESIGN 4.5）。
 // 書き方: "example.com" はそのホストだけ、"*.example.com" はそのサブドメインだけ（example.com 自身は含まない）。
@@ -35,9 +39,35 @@ function isSiteUrl(value) {
   }
 }
 
+// Google 検索の描画・reCAPTCHA に使うホストか（検索表示中だけ通す判定に使う）。
+function isGoogleHost(hostname) {
+  if (typeof hostname !== 'string' || !hostname) return false;
+  const host = hostname.toLowerCase();
+  return GOOGLE_SEARCH_HOST_PATTERNS.some(pattern => hostnameMatches(host, pattern));
+}
+
+// siteView が今 Google の検索結果ページ（/search）を開いているか。/sorry/（CAPTCHA）や
+// 非 Google ページは false。取り込み前の確認に使う（DESIGN 4.10）。
+function isGoogleSearchPageUrl(value) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    return (url.protocol === 'https:' || url.protocol === 'http:')
+      && (host === 'google.com' || host === 'www.google.com')
+      && url.pathname === '/search';
+  } catch {
+    return false;
+  }
+}
+
 function buildGoogleSearchUrl(term) {
   if (typeof term !== 'string' || !term.trim()) return null;
-  const query = new URLSearchParams({ q: `site:tokyomotion.net/video/ ${term.trim()}` });
+  // 利用者が検索演算子ごと貼り付けても、先頭の指定は1回だけ外して付け直す。
+  const keyword = term.trim().replace(/^site:tokyomotion\.net\/video\/\s*/i, '').trim();
+  if (!keyword) return null;
+  // セーフサーチはオフで送る（DESIGN 4.10、2026-09-29 ユーザー決定）。結果件数には影響しないが、
+  // Google のプレビュー画像のぼかしを外すためユーザー指定で off にする。
+  const query = new URLSearchParams({ q: `${GOOGLE_SITE_QUERY_PREFIX} ${keyword}`, safe: 'off' });
   return `https://${GOOGLE_SEARCH_HOST}/search?${query}`;
 }
 
@@ -124,9 +154,10 @@ function enableVideoTagDebug(webContents, log = console.log) {
 function createRequestHandler(allowlist, { debugHosts = false, isGoogleSearchRequestActive = () => false, log = console.log } = {}) {
   return (details, callback) => {
     const hostname = getHostname(details.url);
-    // Google は検索 HTML を 1 回取得する間だけ通す。通常のサイト許可リストには入れない。
-    const isOneSearchRequest = isGoogleSearchRequestActive() && hostname === GOOGLE_SEARCH_HOST;
-    const blocked = !isAllowedUrl(details.url, allowlist) && !isOneSearchRequest;
+    // Google は検索表示中の Google ビューに限り、描画・reCAPTCHA に要るホストだけ通す。
+    // 通常のサイト許可リストには入れない（DESIGN 4.10）。
+    const isSearchRequest = isGoogleSearchRequestActive() && isGoogleHost(hostname);
+    const blocked = !isAllowedUrl(details.url, allowlist) && !isSearchRequest;
 
     // 開発時だけ、サイト本体以外のホスト名（URL 全体ではない）と通した/止めたを記録する。
     // 止めたホストでサイトの機能が壊れたら、ここを見て許可リストに足す。
@@ -153,8 +184,11 @@ module.exports = {
   configureSession,
   createRequestHandler,
   enableVideoTagDebug,
+  getHostname,
   getResponsePreview,
   isAllowedUrl,
+  isGoogleHost,
+  isGoogleSearchPageUrl,
   isSiteUrl,
   isVideoTagRequest,
   readAllowlist

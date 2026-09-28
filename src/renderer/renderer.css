@@ -68,16 +68,30 @@ section { height: 100%; }
 }
 #site-area { min-height: 0; flex: 1; }
 #feed { display: flex; padding: 0; overflow: hidden; }
-#search { overflow: auto; padding: 18px; }
-.search-content { max-width: 920px; }
-.search-content h1 { font-size: 18px; margin: 0 0 18px; }
-.search-tools { display: flex; gap: 8px; }
+#search { display: flex; flex-direction: column; overflow: hidden; padding: 12px 18px; }
+.search-content { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; }
+.search-tools { display: flex; gap: 8px; align-items: center; flex: none; }
 .search-tools input { flex: 1; padding: 7px 10px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; }
 .search-tools button { padding: 6px 10px; border: 1px solid #3a4151; border-radius: 4px; background: #242833; }
-#google-search-status { min-height: 1.5em; color: #9eabc0; }
+.search-modes { display: flex; gap: 8px; margin: 10px 0; flex: none; }
+.search-modes button { padding: 6px 14px; border: 1px solid #3a4151; border-radius: 4px; background: #242833; color: inherit; }
+.search-modes button.active { background: #2c4d7c; border-color: #3a5f95; }
+.search-hint { margin: 0 0 10px; color: #9eabc0; font-size: 13px; line-height: 1.5; }
+#google-search-status { color: #9eabc0; }
+/* 取り込み中に動いて見えるスピナー（DESIGN 4.10）。装飾なので支援技術には読ませない。 */
+.spinner { width: 14px; height: 14px; flex: none; border: 2px solid #3a4151; border-top-color: #6ea0ff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#google-browse { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+#google-area { flex: 1; min-height: 0; background: #0f1116; border: 1px solid #2e3340; border-radius: 4px; }
+#google-cards { flex: 1; min-height: 0; overflow: auto; }
 #google-search-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px; }
 .google-result-card { min-height: 82px; }
 .google-result-card strong { white-space: normal; }
+/* 各カードの裏取得（enrich）待ち: サムネはシマー、タグは「取得中…」。失敗時は無地で止める（DESIGN 4.10）。 */
+.video-card img.thumb-loading { background: linear-gradient(100deg, #262b36 30%, #333a48 50%, #262b36 70%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+.video-card img.thumb-empty { background: #262b36; }
+.site-tags.tags-loading { color: #6b7383; font-style: italic; }
+@keyframes shimmer { to { background-position: -200% 0; } }
 #people-panel { width: 240px; flex: none; overflow: auto; padding: 12px; border-right: 1px solid #2e3340; background: #1d2027; }
 #person-search { width: 100%; margin-bottom: 10px; padding: 6px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; }
 #people > div { display: flex; gap: 4px; margin: 3px 0; }
@@ -94,7 +108,10 @@ section { height: 100%; }
 .card-wrap .video-card { width: 100%; }
 .card-download { position: absolute; top: 6px; right: 6px; padding: 2px 8px; border: 1px solid #3a4151; border-radius: 4px; background: rgba(22, 24, 29, .85); font-size: 12px; }
 .download-status { color: #9eabc0; font-size: 12px; max-width: 28em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.video-card { min-width: 0; padding: 0; overflow: hidden; text-align: left; border: 1px solid #353b49; border-radius: 6px; background: #20242d; }
+.search-note { margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid #4a5568; border-radius: 4px; background: #232833; color: #aeb6c5; font-size: 12px; line-height: 1.5; }
+.video-card { position: relative; min-width: 0; padding: 0; overflow: hidden; text-align: left; border: 1px solid #353b49; border-radius: 6px; background: #20242d; cursor: pointer; }
+.video-card:hover { border-color: #4a90d9; }
+.video-card .dur { position: absolute; top: 93px; right: 5px; padding: 0 5px; border-radius: 3px; background: rgba(0, 0, 0, .78); color: #fff; font-size: 11px; line-height: 18px; }
 .video-card.watched { opacity: .55; }
 .video-card img { display: block; width: 100%; height: 115px; object-fit: cover; background: #303746; }
 .video-card strong, .video-card span, .video-card small { display: block; padding: 5px 8px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

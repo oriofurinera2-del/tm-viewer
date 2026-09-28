@@ -48,13 +48,37 @@ const SITE_BASE_URL = 'https://www.tokyomotion.net/';
 const TAG_MESSAGE_KEY = 'msg';
 const TAG_LINK_SELECTOR = 'a.tag';
 
-// Google 検索の結果（試作）: 結果の見出しを含むリンクだけから動画ページを拾う。
-// Google の内部ページ・広告・一般リンクは受け入れない。
-const GOOGLE_RESULT_AREA_SELECTOR = '#search, #rso';
+// Google 検索の結果（試作）: 結果の見出し（h3）を含むリンクだけを拾う。
+// href の形はセッションで変わる（直リンク・/url?q=平文・/goto?url=暗号化転送）ため、
+// ここでは id を解決せず「生の href＋見出し」だけを返し、実 URL への解決は呼び出し側に任せる。
 const GOOGLE_RESULT_LINK_SELECTOR = 'a[href]';
 const GOOGLE_RESULT_TITLE_SELECTOR = 'h3';
-const GOOGLE_SEARCH_FORM_SELECTOR = 'form[action="/search"]';
 const GOOGLE_BASE_URL = 'https://www.google.com/';
+// 自動ページ送り（DESIGN 4.10）: ページ内の実際の「次へ」リンク。start= を自作して直接飛ぶと
+// セッショントークンが切れて一般結果に広がるため、必ずこの href を辿る（実測）。
+const GOOGLE_NEXT_PAGE_SELECTOR = 'a#pnnext';
+
+// 動画ページ（/video/<id>）から Google 取り込み後にカードへ後入れする情報（DESIGN 4.10）。
+// サイトのタグはページ HTML に無く POST /ajax/video_tag で取る（8 章）ため、ここでは読まない。
+// サムネは動画ごとにハッシュ入りの CDN パスで ID から計算できない。ページ内のサムネ img
+// （8 章の cdn.tokyo-motion.net の /media/videos/ 形）を優先し、無ければ og:image を使う。
+// 投稿者は最初の /user/<名前> リンクから読む（試作: 実 DOM 未確認）。
+const VIDEO_PAGE_THUMB_SELECTOR = 'img[src]';
+const VIDEO_PAGE_THUMB_SRC = /\/media\/videos\//i;
+const OG_IMAGE_SELECTOR = 'meta[property="og:image"]';
+const OG_DURATION_SELECTOR = 'meta[property="og:video:duration"]';
+const VIDEO_PAGE_USER_SELECTOR = 'a[href*="/user/"]';
+
+// 秒数を mm:ss（1 時間以上は h:mm:ss）にする。読めなければ空文字。
+function formatDuration(seconds) {
+  const total = toInt(seconds);
+  if (total === null || total <= 0) return '';
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = n => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
 
 // --- 共通 ---
 
@@ -223,23 +247,61 @@ function parseVideoTags(body) {
   return tags;
 }
 
-// Google の検索結果は保存せず、その場で動画ページの URL とタイトルだけを返す。
-// null は CAPTCHA・同意画面など、検索結果として読めない HTML を示す。
-function parseGoogleSearchResults(html) {
+// Google の検索結果から「生の href＋見出し」だけを取り出す（保存はしない）。
+// 呼び出し側（google:import）が「Google の検索ページである」ことを URL で確認済みなので、
+// ここではコンテナや検索フォームの有無で弾かず、見出し（h3）付きの a[href] を直接拾う。
+// href は anchor の生の値（相対 /goto?...・/url?q=...・直リンクいずれもそのまま）。
+// 実 URL（動画 ID 付き）への解決は転送を叩く必要があるため main 側で行う。
+// Google の DOM は変わりやすいため、特定コンテナに依存せず a[href] を全体から探す。
+// null は HTML として読めないもの（空・非文字列）だけ。結果なしは空配列。
+function parseGoogleResultLinks(html) {
   const $ = load(html);
-  if (!$ || $(GOOGLE_RESULT_AREA_SELECTOR).length === 0 || $(GOOGLE_SEARCH_FORM_SELECTOR).length === 0) return null;
-  const results = [];
+  if (!$) return null;
+  const links = [];
   const seen = new Set();
-  $(GOOGLE_RESULT_AREA_SELECTOR).find(GOOGLE_RESULT_LINK_SELECTOR).each((_, link) => {
+  $(GOOGLE_RESULT_LINK_SELECTOR).each((_, link) => {
     const $link = $(link);
+    const href = ($link.attr('href') || '').trim();
+    if (!href || seen.has(href)) return;
+    // タイトルは見出し（h3）から。見出しの無いリンク（サムネ・引用元など）は飛ばす。
     const title = cleanText($link.find(GOOGLE_RESULT_TITLE_SELECTOR).first().text());
     if (!title) return;
-    const result = googleVideoUrl($link.attr('href'));
-    if (!result || seen.has(result.id)) return;
-    seen.add(result.id);
-    results.push({ ...result, title });
+    seen.add(href);
+    links.push({ href, title });
   });
-  return results;
+  return links;
+}
+
+// ページ内の実際の「次へ」リンク（a#pnnext）の生 href。無ければ null（＝最後のページ）。
+function parseGoogleNextPageHref(html) {
+  const $ = load(html);
+  if (!$) return null;
+  const href = ($(GOOGLE_NEXT_PAGE_SELECTOR).first().attr('href') || '').trim();
+  return href || null;
+}
+
+// 動画ページの HTML から { thumb, user, duration }。読めない・見つからないときは空にする（例外は投げない）。
+function parseVideoPage(html) {
+  const $ = load(html);
+  if (!$) return { thumb: null, user: '', duration: '' };
+  let thumb = null;
+  $(VIDEO_PAGE_THUMB_SELECTOR).each((_, img) => {
+    if (VIDEO_PAGE_THUMB_SRC.test(cleanText($(img).attr('src')))) {
+      thumb = absoluteUrl($(img).attr('src'));
+      return false;
+    }
+    return undefined;
+  });
+  if (!thumb) thumb = absoluteUrl($(OG_IMAGE_SELECTOR).first().attr('content'));
+  let user = '';
+  $(VIDEO_PAGE_USER_SELECTOR).each((_, link) => {
+    const match = USER_PROFILE_PATH.exec(sitePath($(link).attr('href')));
+    if (match) { user = safeDecode(match[1]); return false; }
+    return undefined;
+  });
+  // 長さは og:video:duration（秒）から。無ければ空（試作: 実 DOM 未確認）。
+  const duration = formatDuration($(OG_DURATION_SELECTOR).first().attr('content'));
+  return { thumb, user, duration };
 }
 
 function googleVideoUrl(href) {
@@ -262,9 +324,12 @@ function googleVideoUrl(href) {
 }
 
 module.exports = {
-  parseGoogleSearchResults,
+  googleVideoUrl,
+  parseGoogleNextPageHref,
+  parseGoogleResultLinks,
   parseMe,
   parseUserList,
   parseVideoList,
+  parseVideoPage,
   parseVideoTags,
 };

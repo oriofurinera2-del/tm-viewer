@@ -2,12 +2,12 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, session, shell, safeStorage } = require('electron');
-const { buildGoogleSearchUrl, configureSession, enableVideoTagDebug, isSiteUrl } = require('./session');
+const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, net, session, shell, safeStorage } = require('electron');
+const { buildGoogleSearchUrl, configureSession, enableVideoTagDebug, getHostname, isGoogleHost, isGoogleSearchPageUrl, isSiteUrl } = require('./session');
 const { createFetcher } = require('./fetcher');
 const { createStore } = require('./store');
-const { parseGoogleSearchResults, parseMe, parseUserList, parseVideoList, parseVideoTags } = require('./parser');
-const { createFeedService } = require('./feed');
+const { googleVideoUrl, parseGoogleNextPageHref, parseGoogleResultLinks, parseMe, parseUserList, parseVideoList, parseVideoPage, parseVideoTags } = require('./parser');
+const { createFeedService, videoTagRequest } = require('./feed');
 const notes = require('./notes');
 const credentials = require('./credentials');
 const { persistableCookies } = require('./cookie-persist');
@@ -38,8 +38,10 @@ const SITE_VIEW_TOP = 88;
 
 let mainWindow;
 let siteView;
+let googleView;
 let downloadView;
 let siteAttached = false;
+let googleAttached = false;
 let siteSession;
 let feedService;
 let appStore;
@@ -49,13 +51,26 @@ let autoRefreshStarted = false;
 // 自動ログイン（DESIGN 4.1）: 同時に 2 回動かさない・失敗したら次のログイン成功まで再試行しない。
 let autoLoginBusy = false;
 let autoLoginBlocked = false;
-let googleSearchRequestActive = false;
+// Google 検索の表示中だけ Google のホストを通す（DESIGN 4.10）。Google は検索タブ内蔵の
+// googleView（siteView とは別ビュー・同じ session）で開く。同じ session の webRequest は
+// どのビューの通信かを区別できないため、「googleView が Google を開いている間」だけ通す意図
+// フラグで判定する。google:show で意図を立て、googleView の did-navigate で再計算する。
+let googleSearchActive = false;
+// 自動ページ送りの取り込み（DESIGN 4.10）。走行中のループは token で 1 本に保ち、
+// 新しい検索・再開で古いループを止める。seen は累積のための id 重複除去（アプリ再起動で消える）。
+let googleImportRun = 0;
+const googleImportSeen = new Set();
+// 取り込んだ動画のサムネ・投稿者・サイトタグを裏で順次取得する簡易キュー（取得は feedFetcher の
+// 取得キュー＝4.4 の 2 秒間隔を通す）。
+const googleEnrichQueue = [];
+let googleEnrichRunning = false;
 
 function createFeedServices() {
   siteSession = session.fromPartition(SITE_PARTITION);
   configureSession(siteSession, path.join(__dirname, '../../data/allowlist.json'), {
     debugHosts: DEBUG_HOSTS,
-    isGoogleSearchRequestActive: () => googleSearchRequestActive
+    // Google のホストは、Google 検索の表示中だけ通す（DESIGN 4.10）。意図フラグで判定する。
+    isGoogleSearchRequestActive: () => googleSearchActive
   });
   const store = createStore(app.getPath('userData'));
   appStore = store;
@@ -144,6 +159,7 @@ function createSiteView() {
   });
 
   siteView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // サイト本体以外への移動は止める（Google 検索は検索タブの googleView で扱う）。
   siteView.webContents.on('will-navigate', (event, url) => {
     if (!isSiteUrl(url)) event.preventDefault();
   });
@@ -180,6 +196,62 @@ function createDownloadView() {
     if (!isSiteUrl(url)) event.preventDefault();
   });
   downloadView.webContents.loadURL('about:blank');
+}
+
+// ---- 検索タブ内蔵の Google 専用ブラウザ（googleView、DESIGN 4.10 案A） ----
+
+// renderer から届いた検索タブ「探す」領域の矩形。表示中はこの位置に googleView を置く。
+let googleBounds = { x: 0, y: 0, width: 0, height: 0 };
+
+function resizeGoogleView(bounds) {
+  googleBounds = {
+    x: Math.max(0, Math.floor(Number(bounds?.x) || 0)),
+    y: Math.max(0, Math.floor(Number(bounds?.y) || 0)),
+    width: Math.max(0, Math.floor(Number(bounds?.width) || 0)),
+    height: Math.max(0, Math.floor(Number(bounds?.height) || 0))
+  };
+  if (mainWindow && googleView && googleAttached) googleView.setBounds(googleBounds);
+}
+
+function showGoogleView() {
+  if (!mainWindow || !googleView) return;
+  if (!googleAttached) {
+    mainWindow.contentView.addChildView(googleView);
+    googleAttached = true;
+  }
+  googleView.setBounds(googleBounds);
+}
+
+function hideGoogleView() {
+  if (!mainWindow || !googleView || !googleAttached) return;
+  mainWindow.contentView.removeChildView(googleView);
+  googleAttached = false;
+}
+
+// サイト表示とは別ビュー・同じ session（persist:tm）。安全設定は siteView と同じ。
+// Google のホスト以外への移動は止める（結果リンク＝tokyomotion への遷移はビュー内で起こさない。
+// 取り込みで扱う）。
+function createGoogleView() {
+  googleView = new WebContentsView({
+    webPreferences: {
+      session: siteSession,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  googleView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  googleView.webContents.on('will-navigate', (event, url) => {
+    if (!isGoogleHost(getHostname(url))) event.preventDefault();
+  });
+  googleView.webContents.on('will-redirect', (event, url) => {
+    if (!isGoogleHost(getHostname(url))) event.preventDefault();
+  });
+  googleView.webContents.on('did-navigate', () => {
+    // Google を開いている間だけ、許可リストで Google のホストを通す（DESIGN 4.10）。
+    googleSearchActive = Boolean(googleView) && isGoogleHost(getHostname(googleView.webContents.getURL()));
+  });
+  googleView.webContents.loadURL('about:blank');
 }
 
 // ---- ログイン情報の保存・自動ログイン（DESIGN 4.1） ----
@@ -298,9 +370,11 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = undefined;
     siteAttached = false;
+    googleAttached = false;
   });
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   createSiteView();
+  createGoogleView();
   createDownloadView();
   showSiteView();
 }
@@ -456,16 +530,22 @@ function noteContext(id, pageTitle = currentPageTitle(id)) {
   return { name: note.name, tags: note.tags, score: note.score, title, user: saved?.user || note.user, thumb: saved?.thumb || note.thumb };
 }
 
-function addDownload(id) {
+function addDownload(id, meta = {}) {
   if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, message: '動画IDが正しくありません' };
-  const { name, title } = noteContext(id);
-  const added = downloadQueue.add({ id, name, title });
+  const ctx = noteContext(id);
+  // フィードに無い動画（Google 取り込みなど）は ctx.title が空になるので、
+  // カードが持っているタイトルを渡してもらってファイル名に使う。
+  const metaTitle = typeof meta?.title === 'string'
+    ? meta.title.replace(/\s*[-|]\s*TOKYO\s*Motion\s*$/i, '').trim()
+    : '';
+  const title = ctx.title || metaTitle;
+  const added = downloadQueue.add({ id, name: ctx.name, title });
   return { ok: added, message: added ? null : 'すでに保存待ちです' };
 }
 
 downloadQueue = createDownloadQueue({ resolveUrl: resolveVideoUrl, save: saveVideo, onUpdate: sendDownloadStatus });
 
-ipcMain.handle('download:add', (_event, id) => addDownload(Number(id)));
+ipcMain.handle('download:add', (_event, id, meta) => addDownload(Number(id), meta));
 ipcMain.handle('download:current', () => {
   const id = siteView ? videoIdFromUrl(siteView.webContents.getURL()) : null;
   return id ? addDownload(id) : { ok: false, message: '動画ページを開いてください' };
@@ -539,34 +619,234 @@ ipcMain.handle('site:command', (_event, command, value) => {
   return true;
 });
 
-const GOOGLE_SEARCH_UNREADABLE = 'Googleの結果を読み取れませんでした。サイト検索を使ってください。';
+// アプリ内の検索（DESIGN 4.10、案A）。検索タブ内蔵の googleView に Google 検索を表示し、
+// 自動ページ送りで全ページを辿って動画 URL・タイトルを累積で取り込む。結果・画面は保存しない。
+const GOOGLE_MAX_PAGES = 20;         // 暴走防止の安全上限（DESIGN 4.10）
+const GOOGLE_PAGE_DELAY_MS = 300;    // ページ送りの間隔（ページ読込自体も間を作るので短めで十分）
 
-// Google の検索結果は表示用にだけ使う。保存・再試行・追加巡回はしない。
-ipcMain.handle('google:search', async (_event, term) => {
-  const url = buildGoogleSearchUrl(term);
-  if (!url || !siteSession) return { ok: false, empty: true };
-  let response;
-  try {
-    googleSearchRequestActive = true;
-    response = await siteSession.fetch(url, { credentials: 'omit' });
-  } catch {
-    return { ok: false, message: GOOGLE_SEARCH_UNREADABLE };
-  } finally {
-    googleSearchRequestActive = false;
-  }
-  if (!response.ok || !/text\/html/i.test(response.headers.get('content-type') || '')) {
-    return { ok: false, message: GOOGLE_SEARCH_UNREADABLE };
-  }
-  let body;
-  try {
-    body = await response.text();
-  } catch {
-    return { ok: false, message: GOOGLE_SEARCH_UNREADABLE };
-  }
-  const results = parseGoogleSearchResults(body);
-  if (results === null) return { ok: false, message: GOOGLE_SEARCH_UNREADABLE };
-  return { ok: true, results };
+function sendGoogleStatus(sender, state, extra = {}) {
+  if (sender && !sender.isDestroyed()) sender.send('google:status', { state, ...extra });
+}
+
+// CAPTCHA（/sorry/）ページか。中断検出に使う（DESIGN 4.10）。
+function isGoogleSorryUrl(url) {
+  try { return new URL(url).pathname.startsWith('/sorry/'); } catch { return false; }
+}
+
+ipcMain.on('google:bounds', (_event, bounds) => resizeGoogleView(bounds));
+ipcMain.handle('google:command', (_event, command) => {
+  if (command === 'show') showGoogleView();
+  if (command === 'hide') hideGoogleView();
+  return true;
 });
+
+// 新しい検索: 累積をリセットし、検索語を googleView に開く。読み込みが終わってから ok を返し、
+// 続く google:import が確実に検索結果ページを読めるようにする（取り込みループは renderer が始める）。
+ipcMain.handle('google:show', async (_event, term) => {
+  const url = buildGoogleSearchUrl(term);
+  if (!url || !googleView) return { ok: false };
+  googleImportRun += 1;          // 走行中のループを止める
+  googleImportSeen.clear();      // 累積をリセット
+  googleEnrichQueue.length = 0;  // 裏取得の残りも捨てる
+  googleSearchActive = true;     // 最初の本体リクエストの前に意図を立てる
+  googleView.webContents.loadURL(url).catch(() => {}); // 完全読み込みは待たない
+  await waitForGoogleNav(googleView.webContents);
+  return { ok: true };
+});
+
+// 累積のクリア（カードは renderer 側、seen と裏取得は main 側）。
+ipcMain.handle('google:clear', () => {
+  googleImportRun += 1;
+  googleImportSeen.clear();
+  googleEnrichQueue.length = 0;
+  return { ok: true };
+});
+
+// Google の転送 URL（/goto?url=… や /url?q=…）は 302 の Location でしか実 URL が分からない。
+// siteSession.fetch の redirect:'manual' は opaqueredirect になり Location を読めないため、
+// net.request で手動に受け取る。1 回目の転送だけ見れば動画ページの URL が得られる。
+function resolveRedirect(url, ses) {
+  return new Promise(resolve => {
+    let req;
+    try {
+      req = net.request({ url, session: ses, redirect: 'manual' });
+    } catch {
+      resolve(null);
+      return;
+    }
+    let done = false;
+    const finish = value => { if (!done) { done = true; resolve(value); } };
+    req.on('redirect', (_status, _method, redirectUrl) => { req.abort(); finish(redirectUrl || null); });
+    req.on('response', () => finish(null));
+    req.on('error', () => finish(null));
+    try {
+      req.end();
+    } catch {
+      finish(null);
+    }
+  });
+}
+
+// 結果リンクの生 href を、動画ページの実 URL（ID 付き）に解決する。
+// 直リンク・/url?q=平文はネットワーク不要。Google の転送 URL だけ 302 を叩いて Location を得る。
+// どれも動画ページに解決できなければ null。
+async function resolveGoogleLink(href, ses) {
+  let absHref;
+  try {
+    absHref = new URL(href, 'https://www.google.com/').href;
+  } catch {
+    return null;
+  }
+  const direct = googleVideoUrl(absHref);
+  if (direct) return direct;
+  if (!isGoogleHost(getHostname(absHref))) return null;
+  const redirectUrl = await resolveRedirect(absHref, ses);
+  return redirectUrl ? googleVideoUrl(redirectUrl) : null;
+}
+
+// googleView を Google 内の URL へ移動し、読み込み完了を待つ。Google 以外へは行かない。
+// Google の結果ページは広告・追跡を延々読み続けて did-finish-load が発火せず、
+// 完全読み込みを待つと毎回タイムアウト（30 秒）まで待ってしまう。結果の抽出には
+// DOM が揃っていれば十分なので、結果（a#pnnext / h3）か /sorry/ が現れた時点で進む。
+async function pollGoogleReady(contents, timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    let ready = false;
+    try {
+      ready = await contents.executeJavaScript(
+        "location.href.indexOf('/sorry/')>=0 || !!document.querySelector('a#pnnext') || document.querySelectorAll('h3').length>0",
+        false
+      );
+    } catch { /* 遷移中などは次のループで再試行 */ }
+    if (ready) return;
+    await delay(250);
+  }
+}
+
+// 次ページ等へ移動した後は、新しいページの dom-ready を待ってから結果の出現を確認する
+// （移動前の古いページを誤って読まないため）。
+function waitForGoogleNav(contents, timeoutMs = 12000) {
+  return new Promise(resolve => {
+    let done = false;
+    const finish = () => { if (done) return; done = true; clearTimeout(timer); contents.removeListener('dom-ready', onReady); resolve(); };
+    const onReady = () => {
+      contents.removeListener('dom-ready', onReady);
+      pollGoogleReady(contents, 6000).finally(finish);
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    contents.once('dom-ready', onReady);
+  });
+}
+
+async function loadGoogleUrl(url) {
+  if (!googleView || !isGoogleHost(getHostname(url))) return false;
+  googleView.webContents.loadURL(url).catch(() => {}); // 完全読み込みは待たない
+  await waitForGoogleNav(googleView.webContents);
+  return true;
+}
+
+// 自動ページ送りで累積取り込み（DESIGN 4.10）。現在 googleView が開いているページから始め、
+// ページ内の実際の「次へ」（a#pnnext）を辿って最後まで進む。CAPTCHA を検出したら止めて再開を促す。
+// 各カードは解決できたそばから renderer へ送り（累積・id 重複除去）、サムネ等は裏で後入れする。
+async function runGoogleImportLoop(sender) {
+  if (!googleView) return { ok: false, reason: 'noview' };
+  const run = ++googleImportRun;
+  let total = 0;
+  const tInit = Date.now();
+  await pollGoogleReady(googleView.webContents);
+  console.log(`[gimport] initial ready=${Date.now() - tInit}ms`);
+  for (let page = 0; page < GOOGLE_MAX_PAGES; page += 1) {
+    if (run !== googleImportRun) return { ok: false, reason: 'canceled' };
+    const url = googleView.webContents.getURL();
+    if (isGoogleSorryUrl(url)) { sendGoogleStatus(sender, 'captcha'); return { ok: false, reason: 'captcha', total }; }
+    if (!isGoogleSearchPageUrl(url)) { sendGoogleStatus(sender, 'notready'); return { ok: false, reason: 'notready', total }; }
+    let html;
+    const tExtract0 = Date.now();
+    try {
+      html = await googleView.webContents.executeJavaScript('document.documentElement.outerHTML', false);
+    } catch {
+      sendGoogleStatus(sender, 'error');
+      return { ok: false, reason: 'error', total };
+    }
+    const links = parseGoogleResultLinks(html);
+    const next = parseGoogleNextPageHref(html);
+    const tExtract = Date.now() - tExtract0;
+    if (links === null) { sendGoogleStatus(sender, 'error'); return { ok: false, reason: 'error', total }; }
+    // 結果0かつ次へも無い → CAPTCHA など中断とみなして止める（DESIGN 4.10）。
+    if (links.length === 0 && !next) { sendGoogleStatus(sender, 'captcha'); return { ok: false, reason: 'captcha', total }; }
+    // 実 URL 解決（goto の 302 叩き）は並列で行う。1 件ずつ待つと 1 ページに数秒かかるため。
+    // goto は転送だけの軽いリクエストなので、1 ページ分（約 10 件）まとめて解決してよい。
+    const tResolve0 = Date.now();
+    const resolved = await Promise.all(
+      links.map(async link => {
+        const video = await resolveGoogleLink(link.href, siteSession);
+        return video ? { ...video, title: link.title } : null;
+      })
+    );
+    console.log(`[gimport] page=${page} links=${links.length} extract=${tExtract}ms resolve=${Date.now() - tResolve0}ms next=${next ? 'yes' : 'no'}`);
+    if (run !== googleImportRun) return { ok: false, reason: 'canceled' };
+    const batch = [];
+    for (const video of resolved) {
+      if (!video || googleImportSeen.has(video.id)) continue;
+      googleImportSeen.add(video.id);
+      batch.push(video);
+    }
+    total += batch.length;
+    if (batch.length > 0 && sender && !sender.isDestroyed()) {
+      sender.send('google:cards', batch);
+      enqueueGoogleEnrich(batch, sender);
+    }
+    if (!next) { sendGoogleStatus(sender, 'done', { pages: page + 1, total }); return { ok: true, total }; }
+    sendGoogleStatus(sender, 'importing', { pages: page + 1, total });
+    await delay(GOOGLE_PAGE_DELAY_MS);
+    let absNext;
+    try { absNext = new URL(next, url).href; } catch { sendGoogleStatus(sender, 'done', { pages: page + 1, total }); return { ok: true, total }; }
+    if (run !== googleImportRun) return { ok: false, reason: 'canceled' };
+    const tNav0 = Date.now();
+    const moved = await loadGoogleUrl(absNext);
+    console.log(`[gimport] page=${page} nextpage load=${Date.now() - tNav0}ms`);
+    if (!moved) { sendGoogleStatus(sender, 'done', { pages: page + 1, total }); return { ok: true, total }; }
+  }
+  sendGoogleStatus(sender, 'limit', { pages: GOOGLE_MAX_PAGES, total });
+  return { ok: true, total, limited: true };
+}
+
+ipcMain.handle('google:import', event => runGoogleImportLoop(event.sender));
+
+// サムネ・投稿者・サイトタグを裏で順次取得（DESIGN 4.10）。取得は feedFetcher の取得キュー
+// （4.4・2 秒間隔）を通す。カードは先に並び、取得できた分をここで後入れする。
+function enqueueGoogleEnrich(batch, sender) {
+  for (const video of batch) googleEnrichQueue.push({ id: video.id, sender });
+  if (!googleEnrichRunning) void runGoogleEnrich();
+}
+
+async function runGoogleEnrich() {
+  googleEnrichRunning = true;
+  try {
+    while (googleEnrichQueue.length > 0) {
+      const { id, sender } = googleEnrichQueue.shift();
+      let thumb = null;
+      let user = '';
+      let duration = '';
+      let siteTags = [];
+      try {
+        const page = await feedFetcher.fetch(videoPageUrl(id));
+        const parsed = parseVideoPage(page.body);
+        thumb = parsed.thumb;
+        user = parsed.user;
+        duration = parsed.duration;
+      } catch { /* 1 本の失敗（削除・停止）では止めず次へ */ }
+      try {
+        const { url, options } = videoTagRequest(id);
+        const res = await feedFetcher.fetch(url, options);
+        if (res.status === 200) siteTags = parseVideoTags(res.body);
+      } catch { /* タグ取得の失敗は無視 */ }
+      if (sender && !sender.isDestroyed()) sender.send('google:enrich', { id, thumb, user, siteTags, duration });
+    }
+  } finally {
+    googleEnrichRunning = false;
+  }
+}
 
 ipcMain.handle('feed:refresh', async (_event, options) => {
   if (options?.auto === true) {
