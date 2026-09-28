@@ -2,6 +2,7 @@
 
 このリポジトリは TOKYO Motion 用の PC 専用ブラウザ（Electron）。
 
+- **ユーザーとの会話を引き継ぐときは、最初に `harness/HANDOFF-CODEX-SESSION.md` を読む**（話し方・決定事項・返事待ちの論点）。
 - **最初に `harness/HANDOFF.md` を読む。** 現在地・Codex の担当タスク・担当ファイル・Claude との連絡欄がある。担当外のファイルは編集しない。
 - 仕様と現在地は `docs/DESIGN.md`（7. バージョン計画 / 8. 未確認事項）を確認する。
 - 役割分担・サブエージェント運用は `harness/README.md` を必ず確認し、最初の返答で今回の担当役割を示す。Codex の設定は `.codex/`。
