@@ -238,7 +238,9 @@ blocklist.json    ["juicyads.com", ...]
 - [x] 公式のまとめページ: `/feeds`（私のフィード）はあるが、購読している人の更新記録が少し並ぶだけで、フレンドの新着の代わりにならない（ユーザーの実感とも一致）。4.2 は予定どおり自前で作る。なお `/feeds` の日付は「01/18/26」のような絶対日付だった
 - [x] フレンドの PRIVATE 動画: アプリ（C1 の土台）のサイト表示で、ユーザーが実際に再生できた（2026-09-28）[実測]
 - [ ] 広告の配信元: 動画ページで外部への通信があったのは `jads.co`・`juicyads.com`・`realsrv.com`・`endowmentoverhangutmost.com`（ランダムな名前）・`addthis.com`、ほかに解析用の `google-analytics.com`・`googletagmanager.com` [実測]。動画の前の広告はプレイヤー（fluidplayer）の設定で `syndication.realsrv.com` から取る指定だったが、`realsrv.com` を遮断してもアプリ内で流れた（ユーザー報告）。アプリ内での実際の経路は未確認
-- [~] 動画のタグ: 一覧にも動画ページの HTML にも入っていない。ページを開いたあと `POST /ajax/video_tag` で別に取得して表示している [実測]。確認に使ったブラウザがこの通信を止めていたため、送る内容と返ってくる形は未確認。**アプリの広告遮断で、サイト自身の `/ajax/…` や `/vsrc/…` を止めないこと**
+  - 2026-09-29 アプリの開発時記録 [実測]: 既知の配信元は遮断できていたが、動画の前の広告は**別の配信元に切り替わって流れた**。通したもの: `vast.yomeno.xyz`・`mauc.yomeno.xyz`（広告の設定）、`tsvideo.saawsedge.com`（広告動画）、`pxl-eu.rtb.tsyndicate.com`、`vivodemisrentas.net`、`ethnicexpressions.org`、`go.marzaent.com`。ランダムな名前が多く、**ドメインを足していく方式では追いつかない**。サイト本体に必要だった外部ドメインは `cdn.tokyo-motion.net`・`www44.tokyomotion.net`（動画）・`cdn.fluidplayer.com`（プレイヤー）・`*.bootstrapcdn.com`・`fonts.googleapis.com`・`fonts.gstatic.com`・`ajax.googleapis.com` だけだった
+- [x] 動画のタグの通信（K2、2026-09-29 アプリの開発時記録で確認）[実測]: `POST /ajax/video_tag`、送信本文 `act=list&item_id=<動画ID>`。応答は JSON `{"status":0,"msg":"<HTML>"}` で、タグは `msg` の中の `a.tag`（テキストがタグ名、href は `/search?search_query=<タグ>…`）。同じ `msg` にタグへの投票ボタン（`onclick="tagvp(…)"`）があるが、**押さない・送らない**（書き込み操作）。`act=list` 以外は送らない
+- [~] 動画のタグ（初回の確認）: 一覧にも動画ページの HTML にも入っていない。ページを開いたあと `POST /ajax/video_tag` で別に取得して表示している [実測]。確認に使ったブラウザがこの通信を止めていたため、送る内容と返ってくる形は未確認。**アプリの広告遮断で、サイト自身の `/ajax/…` や `/vsrc/…` を止めないこと**
 - [~] 動画ID: 1 人分の一覧（18 件）で、上から下へ ID が小さくなっていた（新しい順に並んでいる）[実測・1 人のみ]。複数ユーザーでの確認は未実施
 - [ ] 連続取得でアクセス制限されないか（間隔の初期値の妥当性）
 - [x] 動画一覧: `/user/<名前>/videos?page=N`、1 ページ 18 件 [実測]。各動画は `div#video_<ID>`。PRIVATE は `.label-private`、長さは `.duration`、投稿日は `.video-added`（「23 時 前」のような相対表示）
