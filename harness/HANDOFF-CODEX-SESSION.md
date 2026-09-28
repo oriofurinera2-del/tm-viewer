@@ -14,12 +14,14 @@
 - 確認していないことを確認済みと書かない。推測は推測と書く。
 - ユーザーは利用量（トークン）を気にしている。長い調査や大きな出力は避ける。
 
-## 2. 現在地（2026-09-28 時点）
+## 2. 現在地（2026-09-29 更新）
 
-- 仕様: `docs/DESIGN.md`。v0.1 はほぼ確定。フィード画面は `docs/mock/feed.html` で採用済み。
-- コード: C1（Electron 土台）と K1（`src/main/parser.js`・fixtures・テスト）まで完了。テスト 13 件成功。
-- Codex が作業中: **C1 の修正**（外部サイトへの転送を止める、広告の遮断を増やす、開発時の通信記録）→ **C2**。
-- git: ローカルのみ。コミットの名前・メールはこのリポジトリにだけ個人用アカウント（`oriofurinera2-del`、GitHub の非公開用アドレス）を設定済み。**PC 全体の設定（仕事用）を使わない・変えない**。GitHub にはまだ上げていない。
+- 仕様: `docs/DESIGN.md`。v0.1 ほぼ完成。フィード画面は `docs/mock/feed.html` 採用。
+- コード: C1〜C4・C6・K1・アプリ内検索の下地・ダウンロード・Cookie 永続化まで実装済み。**テスト 93 件成功**。
+- 残タスク: **C7 アプリ内の検索**（DESIGN 4.10、まだ画面未実装）、**C5 portable exe のビルド**、実機での通しテスト。
+- 実機の確認待ち: Cookie 永続化で再起動後もログインが残るか（真因は Electron のセッション Cookie 破棄。DESIGN 4.1）。自動ログインの実挙動。
+- **GitHub 公開作業中（2026-09-29）**: 個人アカウント `oriofurinera2-del` に空の Public リポジトリ `https://github.com/oriofurinera2-del/tm-viewer.git` を作成済み。remote `origin` 設定済み。**このPCの `gh`/git 認証は仕事用 `taito-design` なので、そのまま push すると 403**。ユーザーが個人アカウントの Fine-grained PAT（Contents: Read and write）を作り、`git push https://<PAT>@github.com/oriofurinera2-del/tm-viewer.git main` で初回 push する段取り。**PAT を git config に保存しない**。push 後はブランチ追跡だけ `git branch --set-upstream-to=origin/main main` で設定してよい。仕事用の認証情報を使わない・変えない。
+- 公開前チェック済み: 追跡ファイルに実名・成人向け画像なし。コミット作者は個人アカウントの noreply アドレス。
 
 ## 3. ユーザーの実機確認で分かったこと
 
