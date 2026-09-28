@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {
+  parseGoogleSearchResults,
   parseMe,
   parseUserList,
   parseVideoList,
@@ -178,5 +179,18 @@ test('parseVideoTags は壊れた応答・タグ無しでは空配列', () => {
     { status: 0, msg: '<a class="tag">タグA</a>' },
   ]) {
     assert.deepEqual(parseVideoTags(input), []);
+  }
+});
+
+test('parseGoogleSearchResults は Google 結果から動画 URL とタイトルだけを読む', () => {
+  assert.deepEqual(parseGoogleSearchResults(fixture('google-search.html')), [
+    { id: 101, url: 'https://www.tokyomotion.net/video/101', title: '架空の結果 A' },
+    { id: 202, url: 'https://www.tokyomotion.net/video/202', title: '架空の結果 B' },
+  ]);
+});
+
+test('parseGoogleSearchResults は検索結果でない HTML を読めないものとして返す', () => {
+  for (const input of ['', null, undefined, '<form action="/search"></form>', '<div id="search"></div>']) {
+    assert.equal(parseGoogleSearchResults(input), null);
   }
 });

@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('tmViewer', {
       return () => ipcRenderer.removeListener('site:state', listener);
     }
   },
+  google: {
+    search: term => ipcRenderer.invoke('google:search', term)
+  },
   feed: {
     refresh: options => ipcRenderer.invoke('feed:refresh', options),
     onProgress: callback => {

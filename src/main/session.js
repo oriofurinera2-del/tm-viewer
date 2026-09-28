@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 
 const SITE_HOSTS = new Set(['tokyomotion.net', 'www.tokyomotion.net']);
+const GOOGLE_SEARCH_HOST = 'www.google.com';
 
 // サイト表示の通信は許可リストのホストだけ通す（DESIGN 4.5）。
 // 書き方: "example.com" はそのホストだけ、"*.example.com" はそのサブドメインだけ（example.com 自身は含まない）。
@@ -32,6 +33,12 @@ function isSiteUrl(value) {
   } catch {
     return false;
   }
+}
+
+function buildGoogleSearchUrl(term) {
+  if (typeof term !== 'string' || !term.trim()) return null;
+  const query = new URLSearchParams({ q: `site:tokyomotion.net/video/ ${term.trim()}` });
+  return `https://${GOOGLE_SEARCH_HOST}/search?${query}`;
 }
 
 function readAllowlist(allowlistPath) {
@@ -114,10 +121,12 @@ function enableVideoTagDebug(webContents, log = console.log) {
   return true;
 }
 
-function createRequestHandler(allowlist, { debugHosts = false, log = console.log } = {}) {
+function createRequestHandler(allowlist, { debugHosts = false, isGoogleSearchRequestActive = () => false, log = console.log } = {}) {
   return (details, callback) => {
     const hostname = getHostname(details.url);
-    const blocked = !isAllowedUrl(details.url, allowlist);
+    // Google は検索 HTML を 1 回取得する間だけ通す。通常のサイト許可リストには入れない。
+    const isOneSearchRequest = isGoogleSearchRequestActive() && hostname === GOOGLE_SEARCH_HOST;
+    const blocked = !isAllowedUrl(details.url, allowlist) && !isOneSearchRequest;
 
     // 開発時だけ、サイト本体以外のホスト名（URL 全体ではない）と通した/止めたを記録する。
     // 止めたホストでサイトの機能が壊れたら、ここを見て許可リストに足す。
@@ -140,6 +149,7 @@ function configureSession(siteSession, allowlistPath, options) {
 module.exports = {
   DEFAULT_ALLOWLIST,
   SITE_HOSTS,
+  buildGoogleSearchUrl,
   configureSession,
   createRequestHandler,
   enableVideoTagDebug,

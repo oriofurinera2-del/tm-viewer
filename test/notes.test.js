@@ -79,6 +79,15 @@ test('organizedList: フィードから消えた動画は note に保存した u
   assert.equal(three.note.name, 'C');
 });
 
+test('organizedList: 投稿者・サムネが無い Google 検索由来の note もタイトルと得点で表示する', () => {
+  const notes = { 44: { name: '', tags: ['検索'], score: 4, user: '', title: '検索結果の動画', thumb: '', updatedAt: 100 } };
+  const result = organizedList({ notes, findVideo: () => null });
+  assert.deepEqual(result.items, [{
+    id: 44, title: '検索結果の動画', user: '', thumb: '', duration: '', hd: false, private: false, ago: '', siteTags: [],
+    note: { name: '', tags: ['検索'], score: 4 }
+  }]);
+});
+
 test('organizedList: 独自タグで絞り込む', () => {
   const result = organizedList({ notes: sampleNotes(), findVideo: sampleFindVideo, tag: '旅行' });
   assert.deepEqual(result.items.map(x => x.id), [1]);

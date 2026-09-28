@@ -48,6 +48,14 @@ const SITE_BASE_URL = 'https://www.tokyomotion.net/';
 const TAG_MESSAGE_KEY = 'msg';
 const TAG_LINK_SELECTOR = 'a.tag';
 
+// Google 検索の結果（試作）: 結果の見出しを含むリンクだけから動画ページを拾う。
+// Google の内部ページ・広告・一般リンクは受け入れない。
+const GOOGLE_RESULT_AREA_SELECTOR = '#search, #rso';
+const GOOGLE_RESULT_LINK_SELECTOR = 'a[href]';
+const GOOGLE_RESULT_TITLE_SELECTOR = 'h3';
+const GOOGLE_SEARCH_FORM_SELECTOR = 'form[action="/search"]';
+const GOOGLE_BASE_URL = 'https://www.google.com/';
+
 // --- 共通 ---
 
 function load(html) {
@@ -215,7 +223,46 @@ function parseVideoTags(body) {
   return tags;
 }
 
+// Google の検索結果は保存せず、その場で動画ページの URL とタイトルだけを返す。
+// null は CAPTCHA・同意画面など、検索結果として読めない HTML を示す。
+function parseGoogleSearchResults(html) {
+  const $ = load(html);
+  if (!$ || $(GOOGLE_RESULT_AREA_SELECTOR).length === 0 || $(GOOGLE_SEARCH_FORM_SELECTOR).length === 0) return null;
+  const results = [];
+  const seen = new Set();
+  $(GOOGLE_RESULT_AREA_SELECTOR).find(GOOGLE_RESULT_LINK_SELECTOR).each((_, link) => {
+    const $link = $(link);
+    const title = cleanText($link.find(GOOGLE_RESULT_TITLE_SELECTOR).first().text());
+    if (!title) return;
+    const result = googleVideoUrl($link.attr('href'));
+    if (!result || seen.has(result.id)) return;
+    seen.add(result.id);
+    results.push({ ...result, title });
+  });
+  return results;
+}
+
+function googleVideoUrl(href) {
+  if (typeof href !== 'string' || !href.trim()) return null;
+  let url;
+  try {
+    url = new URL(href, GOOGLE_BASE_URL);
+    if (url.hostname.toLowerCase() === 'www.google.com' && url.pathname === '/url') {
+      url = new URL(url.searchParams.get('q') || '');
+    }
+  } catch {
+    return null;
+  }
+  if (!['tokyomotion.net', 'www.tokyomotion.net'].includes(url.hostname.toLowerCase())) return null;
+  const match = /^\/video\/(\d+)(?:\/|$)/.exec(url.pathname);
+  if (!match) return null;
+  const id = toInt(match[1]);
+  if (id === null) return null;
+  return { id, url: `https://www.tokyomotion.net/video/${id}` };
+}
+
 module.exports = {
+  parseGoogleSearchResults,
   parseMe,
   parseUserList,
   parseVideoList,

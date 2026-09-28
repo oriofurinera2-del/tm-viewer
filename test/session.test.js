@@ -6,6 +6,7 @@ const { EventEmitter } = require('node:events');
 const path = require('node:path');
 const {
   DEFAULT_ALLOWLIST,
+  buildGoogleSearchUrl,
   createRequestHandler,
   enableVideoTagDebug,
   isAllowedUrl,
@@ -13,6 +14,26 @@ const {
   isVideoTagRequest,
   readAllowlist
 } = require('../src/main/session');
+
+test('Google 検索 URL は空語を作らず、検索語を安全に組み立てる', () => {
+  assert.equal(buildGoogleSearchUrl(''), null);
+  assert.equal(buildGoogleSearchUrl('  '), null);
+  assert.equal(
+    buildGoogleSearchUrl('a&b 日本語'),
+    'https://www.google.com/search?q=site%3Atokyomotion.net%2Fvideo%2F+a%26b+%E6%97%A5%E6%9C%AC%E8%AA%9E'
+  );
+});
+
+test('Google のホストは1回の検索取得中だけ通し、通常の許可リストには加えない', () => {
+  let active = false;
+  const decisions = [];
+  const handler = createRequestHandler([], { isGoogleSearchRequestActive: () => active });
+  handler({ url: 'https://www.google.com/search?q=test' }, decision => decisions.push(decision));
+  active = true;
+  handler({ url: 'https://www.google.com/search?q=test' }, decision => decisions.push(decision));
+  handler({ url: 'https://example.test/' }, decision => decisions.push(decision));
+  assert.deepEqual(decisions, [{ cancel: true }, { cancel: false }, { cancel: true }]);
+});
 
 test('サイト本体と www だけをサイト遷移として許可する', () => {
   assert.equal(isSiteUrl('https://tokyomotion.net/login'), true);

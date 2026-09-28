@@ -1,5 +1,6 @@
 'use strict';
 const site = window.tmViewer.site;
+const google = window.tmViewer.google;
 const feed = window.tmViewer.feed;
 const notes = window.tmViewer.notes;
 const download = window.tmViewer.download;
@@ -13,11 +14,12 @@ function opts() { return { includeSubscriptions: state.includeSubscriptions, vie
 function isCurrent(requestId) { return requestId === state.requestId; }
 function setView(name) {
   const show = name === 'site';
-  $('feed').hidden = name !== 'feed'; $('organized').hidden = name !== 'organized'; $('site').hidden = !show; $('downloads').hidden = name !== 'downloads'; $('settings').hidden = name !== 'settings';
+  $('feed').hidden = name !== 'feed'; $('search').hidden = name !== 'search'; $('organized').hidden = name !== 'organized'; $('site').hidden = !show; $('downloads').hidden = name !== 'downloads'; $('settings').hidden = name !== 'settings';
   document.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('active', x.dataset.view === name));
   site.command(show ? 'show' : 'hide');
   if (show) bounds();
   else if (name === 'feed') void draw(true);
+  else if (name === 'search') $('google-search-term').focus();
   else if (name === 'organized') void drawOrganized();
   else if (name === 'downloads') renderDownloadsTab();
   else if (name === 'settings') void drawCredentials();
@@ -30,6 +32,44 @@ function pager(id, current, pages, onGo) {
     const b = document.createElement('button'); b.textContent = label; b.disabled = page < 1 || page > pages || page === current;
     b.onclick = () => go(page); box.append(b);
   });
+}
+
+async function googleResultCard(result) {
+  // 検索結果そのものは保存しない。既に利用者が付けた note だけを表示に重ねる。
+  const context = await notes.context(result.id).catch(() => null);
+  const video = {
+    id: result.id,
+    title: result.title,
+    user: context?.user || '',
+    thumb: context?.thumb || null,
+    duration: '', hd: false, private: false, ago: '', siteTags: [], siteTagsAt: 0,
+    note: { name: context?.name || '', tags: Array.isArray(context?.tags) ? context.tags : [], score: context?.score || 0 }
+  };
+  return videoCard(video, { url: result.url, sourceLabel: 'Google 検索の結果', preventTagFetch: true, markWatched: false });
+}
+
+async function renderGoogleResults(results) {
+  const grid = $('google-search-grid'); grid.textContent = '';
+  const cards = await Promise.all(results.map(googleResultCard));
+  cards.forEach(card => grid.append(card));
+}
+
+async function runGoogleSearch() {
+  const term = $('google-search-term').value.trim();
+  if (!term) return;
+  const submit = $('google-search-submit'); const status = $('google-search-status');
+  submit.disabled = true; status.textContent = 'Google を検索中…'; void renderGoogleResults([]);
+  try {
+    const result = await google.search(term);
+    if (result?.ok) {
+      await renderGoogleResults(Array.isArray(result.results) ? result.results : []);
+      status.textContent = result.results.length ? `${result.results.length} 件` : '該当する動画はありません。';
+    } else if (!result?.empty) {
+      status.textContent = result?.message || 'Googleの結果を読み取れませんでした。サイト検索を使ってください。';
+    }
+  } catch {
+    status.textContent = 'Googleの結果を読み取れませんでした。サイト検索を使ってください。';
+  } finally { submit.disabled = false; }
 }
 // 独自タグの候補（既存の独自タグ）。編集欄を開くたびに使うので取得結果を軽くキャッシュする。
 let customTagCandidatesCache = null;
@@ -102,7 +142,7 @@ function buildTagEditor(currentTags, onChange) {
   return wrap;
 }
 
-function videoCard(video) {
+function videoCard(video, { url = `https://www.tokyomotion.net/video/${video.id}`, sourceLabel = '', preventTagFetch = false, markWatched = true } = {}) {
   const note = { name: video.note?.name || '', tags: Array.isArray(video.note?.tags) ? [...video.note.tags] : [], score: Number.isInteger(video.note?.score) ? video.note.score : 0 };
   const wrap = document.createElement('div'); wrap.className = 'card-wrap';
   const b = document.createElement('div'); b.className = `video-card${video.watched ? ' watched' : ''}`; b.tabIndex = 0; b.setAttribute('role', 'button');
@@ -114,12 +154,12 @@ function videoCard(video) {
   const nameSpan = document.createElement('span'); nameSpan.className = 'card-user-name'; nameSpan.textContent = `${video.user} ・ ${video.duration || ''}`;
   const posted = document.createElement('span'); posted.className = 'card-posted'; posted.textContent = postedLabel(video); posted.title = video.ago || '';
   info.append(avatar(video.user, video.avatar), nameSpan, posted);
-  const badges = document.createElement('small'); badges.textContent = [video.isNew && '新着', video.watched && '視聴済み', video.hd && '高画質', video.private && '非公開'].filter(Boolean).join(' '); badges.title = video.ago || '';
+  const badges = document.createElement('small'); badges.textContent = [sourceLabel, video.isNew && '新着', video.watched && '視聴済み', video.hd && '高画質', video.private && '非公開'].filter(Boolean).join(' '); badges.title = video.ago || '';
   const starsBox = document.createElement('div'); starsBox.className = 'stars';
   const customTagsBox = document.createElement('div'); customTagsBox.className = 'custom-tags';
   const siteTagsBox = document.createElement('small'); siteTagsBox.className = 'site-tags'; siteTagsBox.dataset.id = String(video.id); showTags(siteTagsBox, video.siteTags);
   // タグ未取得の動画は、カーソルを乗せたときにその 1 本だけ取る（DESIGN 4.2）。
-  if (!Number.isFinite(video.siteTagsAt)) b.addEventListener('mouseenter', () => void loadTags(video.id), { once: true });
+  if (!preventTagFetch && !Number.isFinite(video.siteTagsAt)) b.addEventListener('mouseenter', () => void loadTags(video.id), { once: true });
 
   // 名前があれば元のタイトルより大きく、元のタイトルは小さく併記する（4.8）。
   function renderTitle() {
@@ -158,8 +198,9 @@ function videoCard(video) {
   }
   renderTitle(); renderStars(); renderCustomTags();
 
-  b.append(image, titleBox, info, badges, starsBox, customTagsBox, siteTagsBox);
-  const openCard = async () => { await feed.watch(video.id, true); await site.command('navigate', `https://www.tokyomotion.net/video/${video.id}`); setView('site'); };
+  if (video.user) b.append(image, titleBox, info, badges, starsBox, customTagsBox, siteTagsBox);
+  else b.append(image, titleBox, badges, starsBox, customTagsBox, siteTagsBox);
+  const openCard = async () => { if (markWatched) await feed.watch(video.id, true); await site.command('navigate', url); setView('site'); };
   b.onclick = () => void openCard();
   b.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openCard(); } };
 
@@ -466,6 +507,7 @@ async function renderSiteMetabar(id) {
 document.querySelectorAll('[data-view]').forEach(x => { x.onclick = () => setView(x.dataset.view); });
 $('to-feed').onclick = () => setView('feed'); back.onclick = () => site.command('back'); forward.onclick = () => site.command('forward');
 $('address-form').onsubmit = event => { event.preventDefault(); site.command('navigate', $('address').value.trim()); };
+$('google-search-form').onsubmit = event => { event.preventDefault(); void runGoogleSearch(); };
 async function refresh(auto = false) {
   $('refresh-feed').disabled = true; $('feed-progress').textContent = '取得中…';
   try {

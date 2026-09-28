@@ -12,6 +12,7 @@
     <nav aria-label="画面">
       <button type="button" data-view="site" class="active"><span class="tab-icon" aria-hidden="true">🌐</span><span class="tab-label">サイト表示</span></button>
       <button type="button" data-view="feed"><span class="tab-icon" aria-hidden="true">📥</span><span class="tab-label">フィード</span></button>
+      <button type="button" data-view="search"><span class="tab-icon" aria-hidden="true">🔎</span><span class="tab-label">検索</span></button>
       <button type="button" data-view="organized"><span class="tab-icon" aria-hidden="true">⭐</span><span class="tab-label">整理した動画</span></button>
       <button type="button" data-view="downloads"><span class="tab-icon" aria-hidden="true">⬇</span><span class="tab-label">ダウンロード</span></button>
       <button type="button" data-view="settings"><span class="tab-icon" aria-hidden="true">⚙</span><span class="tab-label">設定</span></button>
@@ -67,6 +68,19 @@
       <div id="org-pager-top" class="pager"></div>
       <div id="org-grid"></div>
       <div id="org-pager-bottom" class="pager"></div>
+    </section>
+
+    <section id="search" hidden>
+      <div class="search-content">
+        <h1>検索</h1>
+        <form id="google-search-form" class="search-tools">
+          <label class="visually-hidden" for="google-search-term">検索語</label>
+          <input id="google-search-term" type="search" autocomplete="off" placeholder="Google で探す語">
+          <button type="submit" id="google-search-submit">Googleで探す</button>
+        </form>
+        <p id="google-search-status" role="status"></p>
+        <div id="google-search-grid"></div>
+      </div>
     </section>
 
     <section id="site">

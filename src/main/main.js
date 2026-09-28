@@ -3,10 +3,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, session, shell, safeStorage } = require('electron');
-const { configureSession, enableVideoTagDebug, isSiteUrl } = require('./session');
+const { buildGoogleSearchUrl, configureSession, enableVideoTagDebug, isSiteUrl } = require('./session');
 const { createFetcher } = require('./fetcher');
 const { createStore } = require('./store');
-const { parseMe, parseUserList, parseVideoList, parseVideoTags } = require('./parser');
+const { parseGoogleSearchResults, parseMe, parseUserList, parseVideoList, parseVideoTags } = require('./parser');
 const { createFeedService } = require('./feed');
 const notes = require('./notes');
 const credentials = require('./credentials');
@@ -49,11 +49,13 @@ let autoRefreshStarted = false;
 // 自動ログイン（DESIGN 4.1）: 同時に 2 回動かさない・失敗したら次のログイン成功まで再試行しない。
 let autoLoginBusy = false;
 let autoLoginBlocked = false;
+let googleSearchRequestActive = false;
 
 function createFeedServices() {
   siteSession = session.fromPartition(SITE_PARTITION);
   configureSession(siteSession, path.join(__dirname, '../../data/allowlist.json'), {
-    debugHosts: DEBUG_HOSTS
+    debugHosts: DEBUG_HOSTS,
+    isGoogleSearchRequestActive: () => googleSearchRequestActive
   });
   const store = createStore(app.getPath('userData'));
   appStore = store;
@@ -535,6 +537,35 @@ ipcMain.handle('site:command', (_event, command, value) => {
   if (command === 'show') showSiteView();
   if (command === 'hide') hideSiteView();
   return true;
+});
+
+const GOOGLE_SEARCH_UNREADABLE = 'Googleの結果を読み取れませんでした。サイト検索を使ってください。';
+
+// Google の検索結果は表示用にだけ使う。保存・再試行・追加巡回はしない。
+ipcMain.handle('google:search', async (_event, term) => {
+  const url = buildGoogleSearchUrl(term);
+  if (!url || !siteSession) return { ok: false, empty: true };
+  let response;
+  try {
+    googleSearchRequestActive = true;
+    response = await siteSession.fetch(url, { credentials: 'omit' });
+  } catch {
+    return { ok: false, message: GOOGLE_SEARCH_UNREADABLE };
+  } finally {
+    googleSearchRequestActive = false;
+  }
+  if (!response.ok || !/text\/html/i.test(response.headers.get('content-type') || '')) {
+    return { ok: false, message: GOOGLE_SEARCH_UNREADABLE };
+  }
+  let body;
+  try {
+    body = await response.text();
+  } catch {
+    return { ok: false, message: GOOGLE_SEARCH_UNREADABLE };
+  }
+  const results = parseGoogleSearchResults(body);
+  if (results === null) return { ok: false, message: GOOGLE_SEARCH_UNREADABLE };
+  return { ok: true, results };
 });
 
 ipcMain.handle('feed:refresh', async (_event, options) => {

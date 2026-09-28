@@ -68,6 +68,16 @@ section { height: 100%; }
 }
 #site-area { min-height: 0; flex: 1; }
 #feed { display: flex; padding: 0; overflow: hidden; }
+#search { overflow: auto; padding: 18px; }
+.search-content { max-width: 920px; }
+.search-content h1 { font-size: 18px; margin: 0 0 18px; }
+.search-tools { display: flex; gap: 8px; }
+.search-tools input { flex: 1; padding: 7px 10px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; }
+.search-tools button { padding: 6px 10px; border: 1px solid #3a4151; border-radius: 4px; background: #242833; }
+#google-search-status { min-height: 1.5em; color: #9eabc0; }
+#google-search-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px; }
+.google-result-card { min-height: 82px; }
+.google-result-card strong { white-space: normal; }
 #people-panel { width: 240px; flex: none; overflow: auto; padding: 12px; border-right: 1px solid #2e3340; background: #1d2027; }
 #person-search { width: 100%; margin-bottom: 10px; padding: 6px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; }
 #people > div { display: flex; gap: 4px; margin: 3px 0; }
