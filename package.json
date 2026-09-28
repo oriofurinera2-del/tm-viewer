@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "dist": "electron-builder --win portable --x64",
     "test": "node --test",
     "check": "node --check src/main/main.js && node --check src/main/session.js && node --check src/main/fetcher.js && node --check src/main/feed.js && node --check src/main/store.js && node --check src/main/download.js && node --check src/main/notes.js && node --check src/main/credentials.js && node --check src/main/cookie-persist.js && node --check src/preload/preload.js && node --check src/renderer/renderer.js"
   },
@@ -13,6 +14,20 @@
     "cheerio": "^1.1.2"
   },
   "devDependencies": {
-    "electron": "^37.0.0"
+    "electron": "^37.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "net.tokyomotion.tmviewer",
+    "productName": "TM Viewer",
+    "files": [
+      "package.json",
+      "src/**/*",
+      "data/allowlist.json"
+    ],
+    "win": {
+      "target": "portable",
+      "artifactName": "TM-Viewer-${version}-portable.${ext}"
+    }
   }
 }

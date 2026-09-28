@@ -3,6 +3,8 @@
 TOKYO Motion を PC で快適に見るための、Windows 専用の閲覧アプリです。
 フレンド・購読ユーザーの新着動画をまとめて見る機能を中心に、閲覧まわりの不便を解消します。
 
+配布版は [GitHub Releases](https://github.com/oriofurinera2-del/tm-viewer/releases) から入手します。このリポジトリではアプリのコードを確認できます。
+
 - 本人と知り合い向けのアプリです。すべての処理は各自の PC 内で完結し、外部サーバーには送信しません。
 - 現在 **開発中（v0.1）** です。一部の機能はまだ作成中です。
 
@@ -72,6 +74,9 @@ TOKYO Motion を PC で快適に見るための、Windows 専用の閲覧アプ�
 npm install
 npm start        # アプリを起動
 npm test         # テスト
+npm run dist     # Windows x64 向け portable exe を dist/ に作成
 ```
+
+配布版には `src/`、`data/allowlist.json`、実行に必要な依存パッケージのみを含めます。開発用の文書・テスト・AI 向け設定は含めません。
 
 設計は [docs/DESIGN.md](docs/DESIGN.md) を正とします。

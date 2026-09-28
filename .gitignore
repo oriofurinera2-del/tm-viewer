@@ -3,8 +3,12 @@ dist/
 out/
 *.log
 
-# 個人の設定
-.claude/settings.local.json
+# 開発時の AI 向け設定・引き継ぎ文書はローカルだけに置く
+.claude/
+.codex/
+AGENTS.md
+CLAUDE.md
+harness/
 
 # 実ページの保存（除去前の生 HTML）は置かない。除去済みだけ test/fixtures/ に置く
 test/fixtures/raw/
