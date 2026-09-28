@@ -5,7 +5,7 @@ const { app, BrowserWindow, WebContentsView, ipcMain, session } = require('elect
 const { configureSession, enableVideoTagDebug, isSiteUrl } = require('./session');
 const { createFetcher } = require('./fetcher');
 const { createStore } = require('./store');
-const { parseMe, parseUserList, parseVideoList } = require('./parser');
+const { parseMe, parseUserList, parseVideoList, parseVideoTags } = require('./parser');
 const { createFeedService } = require('./feed');
 
 const START_URL = 'https://www.tokyomotion.net/';
@@ -19,10 +19,12 @@ let siteView;
 let siteAttached = false;
 let siteSession;
 let feedService;
+// 起動時の自動更新は 1 回だけ（DESIGN 4.4）。renderer の読み直しでは繰り返さない。
+let autoRefreshStarted = false;
 
 function createFeedServices() {
   siteSession = session.fromPartition(SITE_PARTITION);
-  configureSession(siteSession, path.join(__dirname, '../../data/blocklist.json'), {
+  configureSession(siteSession, path.join(__dirname, '../../data/allowlist.json'), {
     debugHosts: DEBUG_HOSTS
   });
   const store = createStore(app.getPath('userData'));
@@ -36,7 +38,7 @@ function createFeedServices() {
     parseVideoList,
     store
   });
-  feedService = createFeedService({ fetcher, store, parseUserList, parseVideoList });
+  feedService = createFeedService({ fetcher, store, parseUserList, parseVideoList, parseVideoTags });
   return fetcher;
 }
 
@@ -143,15 +145,34 @@ ipcMain.handle('site:command', (_event, command, value) => {
 });
 
 ipcMain.handle('feed:refresh', async (_event, options) => {
+  if (options?.auto === true) {
+    if (autoRefreshStarted) return { ok: false, skipped: true };
+    autoRefreshStarted = true;
+  }
   const response = await feedFetcher.fetch(START_URL);
   const me = parseMe(response.body);
-  if (!me) return { ok: false, message: 'サイトにログインしてから更新してください。' };
+  if (!me) return { ok: false, loggedIn: false, message: 'サイトにログインしてから更新してください。' };
   const result = await feedService.refresh({
     me,
     includeSubscriptions: options?.includeSubscriptions !== false,
     onProgress: ({ done, total }) => _event.sender.send('feed:progress', { done, total })
   });
+  if (!result.stopped) {
+    // NEW の動画のタグを裏で順に取る（DESIGN 4.2）。更新の応答は待たせない。
+    const sender = _event.sender;
+    feedService.fetchNewSiteTags({
+      onTags: tags => { if (!sender.isDestroyed()) sender.send('feed:site-tags', tags); }
+    }).catch(() => {});
+  }
   return { ok: !result.stopped, ...result };
+});
+
+ipcMain.handle('feed:tags', async (_event, id) => {
+  try {
+    return { ok: true, tags: await feedService.fetchSiteTags(id) };
+  } catch (error) {
+    return { ok: false, stopped: error?.name === 'FetchStoppedError' };
+  }
 });
 
 ipcMain.handle('feed:open', (_event, options) => feedService.openFeed(options));

@@ -18,6 +18,8 @@ const USER_ITEM_SELECTOR = 'div[id^="friend_"], div[id^="subscription_"]';
 const USER_ITEM_ID = /^(friend|subscription)_\d+$/;
 const USER_LINK_SELECTOR = 'a[href^="/user/"]';
 const USER_PROFILE_PATH = /^\/user\/([^/?#]+)\/?$/;
+// 各人のアイコン: 同じ枠の img の src（プロフィールへのリンクの中にある）
+const USER_AVATAR_SELECTOR = 'img[src]';
 
 // 動画一覧: 各動画の枠と中身
 const VIDEO_ITEM_SELECTOR = 'div[id^="video_"]';
@@ -39,9 +41,12 @@ const TOTAL_SENTENCE = /公開中\s*[\d,]+\s*へ\s*[\d,]+\s*の\s*([\d,]+)/;
 
 // サイト自身の絶対 URL（相対パスに直して比べる）
 const SITE_ORIGIN = /^https?:\/\/(?:www\.)?tokyomotion\.net(?=\/)/i;
+const SITE_BASE_URL = 'https://www.tokyomotion.net/';
 
-// タグ（K2 で確定）: HTML で返ってきた場合に拾うリンク
-const TAG_LINK_SELECTOR = 'a[href*="/tag"], a[href*="/search"]';
+// タグ（K2 で確定、DESIGN 8 章）: POST /ajax/video_tag の応答は JSON {"status":0,"msg":"<HTML>"}。
+// タグは msg の中の a.tag のテキスト。同じ msg にある投票ボタン（tagvp）は読まない。
+const TAG_MESSAGE_KEY = 'msg';
+const TAG_LINK_SELECTOR = 'a.tag';
 
 // --- 共通 ---
 
@@ -49,6 +54,18 @@ function load(html) {
   if (typeof html !== 'string' || html.length === 0) return null;
   try {
     return cheerio.load(html);
+  } catch {
+    return null;
+  }
+}
+
+// 画像の src を http(s) の絶対 URL にする。空・その他の形は null。
+function absoluteUrl(src) {
+  const value = cleanText(src);
+  if (!value) return null;
+  try {
+    const url = new URL(value, SITE_BASE_URL);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
   } catch {
     return null;
   }
@@ -116,24 +133,39 @@ function parseMe(html) {
   return me;
 }
 
+// avatars は { 名前: アイコンの URL }。src が空の人は入れない。
 function parseUserList(html) {
   const $ = load(html);
-  if (!$) return { users: [], lastPage: 1, total: null };
+  if (!$) return { users: [], avatars: {}, lastPage: 1, total: null };
   const me = parseMe(html);
   const users = [];
+  const avatars = {};
   const seen = new Set();
   $(USER_ITEM_SELECTOR).each((_, item) => {
     if (!USER_ITEM_ID.test($(item).attr('id') || '')) return;
+    const names = [];
     $(item).find(USER_LINK_SELECTOR).each((__, link) => {
       const match = USER_PROFILE_PATH.exec(sitePath($(link).attr('href')));
       if (!match) return;
       const name = safeDecode(match[1]);
-      if (name === me || seen.has(name)) return;
+      if (name === me || names.includes(name)) return;
+      names.push(name);
+      if (seen.has(name)) return;
       seen.add(name);
       users.push(name);
     });
+    // 1 つの枠に 1 人のときだけアイコンを結び付ける（取り違えを防ぐ）
+    if (names.length !== 1 || avatars[names[0]]) return;
+    $(item).find(USER_AVATAR_SELECTOR).each((__, img) => {
+      const url = absoluteUrl($(img).attr('src'));
+      if (url) {
+        avatars[names[0]] = url;
+        return false;
+      }
+      return undefined;
+    });
   });
-  return { users, lastPage: readLastPage($), total: readTotal($) };
+  return { users, avatars, lastPage: readLastPage($), total: readTotal($) };
 }
 
 function parseVideoList(html) {
@@ -165,44 +197,22 @@ function parseVideoList(html) {
   return { videos, lastPage: readLastPage($), total: readTotal($) };
 }
 
-// /ajax/video_tag の応答の形は未確認。K2 で確定する。
-// 今は「JSON 配列 / JSON オブジェクトの tags 配列 / HTML 内のリンク文字列」を順に試す仮実装。
-function tagName(value) {
-  if (typeof value === 'string') return cleanText(value);
-  if (value && typeof value === 'object') {
-    return cleanText(value.name ?? value.tag ?? value.title ?? '');
-  }
-  return '';
-}
-
-function uniqueTags(values) {
-  const tags = [];
-  for (const value of values) {
-    const name = tagName(value);
-    if (name && !tags.includes(name)) tags.push(name);
-  }
-  return tags;
-}
-
 function parseVideoTags(body) {
-  let data = body;
-  if (typeof body === 'string') {
-    const text = body.trim();
-    if (!text) return [];
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = null;
-    }
-    if (data === null || typeof data !== 'object') {
-      const $ = load(text);
-      if (!$) return [];
-      return uniqueTags($(TAG_LINK_SELECTOR).map((_, el) => $(el).text()).get());
-    }
+  if (typeof body !== 'string') return [];
+  let data;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    return [];
   }
-  if (Array.isArray(data)) return uniqueTags(data);
-  if (data && typeof data === 'object' && Array.isArray(data.tags)) return uniqueTags(data.tags);
-  return [];
+  const $ = load(data && typeof data === 'object' ? data[TAG_MESSAGE_KEY] : null);
+  if (!$) return [];
+  const tags = [];
+  $(TAG_LINK_SELECTOR).each((_, el) => {
+    const name = cleanText($(el).text());
+    if (name && !tags.includes(name)) tags.push(name);
+  });
+  return tags;
 }
 
 module.exports = {

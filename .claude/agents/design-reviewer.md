@@ -13,6 +13,6 @@ For each proposal, give briefly:
 3. Cost/stress when it turns out wrong
 4. Recommendation: 採用候補 / 要検証 / 非推奨, plus how to verify or falsify it
 
-Always check: conflicts with existing spec, UI load, information density, implementation and maintenance cost (site HTML changes), load on the site, and security/privacy (no credential handling, no download feature).
+Always check: conflicts with existing spec, UI load, information density, implementation and maintenance cost (site HTML changes), load on the site, and security/privacy (no credential handling).
 Do not agree just because the user proposed it; do not disagree for its own sake.
 Do not launch sub-agents. Keep the report short: issues, options, impact, recommendation, open questions.

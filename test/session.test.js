@@ -3,12 +3,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const path = require('node:path');
 const {
+  DEFAULT_ALLOWLIST,
   createRequestHandler,
   enableVideoTagDebug,
-  isBlockedUrl,
+  isAllowedUrl,
   isSiteUrl,
-  isVideoTagRequest
+  isVideoTagRequest,
+  readAllowlist
 } = require('../src/main/session');
 
 test('サイト本体と www だけをサイト遷移として許可する', () => {
@@ -21,44 +24,64 @@ test('サイト本体と www だけをサイト遷移として許可する', () 
   assert.equal(isSiteUrl('file:///tmp/page.html'), false);
 });
 
-test('広告ドメインとそのサブドメインだけを遮断する', () => {
-  const blocklist = [
-    'juicyads.com',
-    'realsrv.com',
-    'magsrv.com',
-    'jads.co',
-    'endowmentoverhangutmost.com',
-    'addthis.com',
-    'google-analytics.com',
-    'googletagmanager.com'
+const ALLOWLIST_PATH = path.join(__dirname, '../data/allowlist.json');
+
+test('許可リストにあるホストだけ通し、それ以外（ランダムな名前の配信元を含む）は止める', () => {
+  const allowlist = readAllowlist(ALLOWLIST_PATH);
+  const allowed = [
+    'https://www.tokyomotion.net/ajax/video_tag',
+    'https://tokyomotion.net/vsrc/segment',
+    'https://www44.tokyomotion.net/video.mp4',
+    'https://live.tokyomotion.net/',
+    'https://cdn.tokyo-motion.net/thumb.jpg',
+    'https://cdn.fluidplayer.com/v3/current/fluidplayer.min.js',
+    'https://maxcdn.bootstrapcdn.com/bootstrap.min.css',
+    'https://fonts.googleapis.com/css',
+    'https://fonts.gstatic.com/font.woff2',
+    'https://ajax.googleapis.com/ajax/libs/jquery.js'
   ];
-  assert.equal(isBlockedUrl('https://juicyads.com/ad.js', blocklist), true);
-  assert.equal(isBlockedUrl('https://a.realsrv.com/ad.js', blocklist), true);
-  assert.equal(isBlockedUrl('https://jads.co/ad.js', blocklist), true);
-  assert.equal(isBlockedUrl('https://endowmentoverhangutmost.com/ad.js', blocklist), true);
-  assert.equal(isBlockedUrl('https://addthis.com/widget.js', blocklist), true);
-  assert.equal(isBlockedUrl('https://www.google-analytics.com/collect', blocklist), true);
-  assert.equal(isBlockedUrl('https://www.googletagmanager.com/gtm.js', blocklist), true);
-  assert.equal(isBlockedUrl('https://notjuicyads.com/ad.js', blocklist), false);
-  assert.equal(isBlockedUrl('https://www.tokyomotion.net/ajax/video_tag', blocklist), false);
-  assert.equal(isBlockedUrl('https://tokyomotion.net/vsrc/segment', blocklist), false);
+  const blocked = [
+    'https://syndication.realsrv.com/ad.js',
+    'https://vast.random-name.example/vast.xml',
+    'https://www.google-analytics.com/collect',
+    'https://tokyomotion.net.evil.example/',
+    'https://nottokyomotion.net/',
+    'https://evil-tokyo-motion.net/',
+    'https://bootstrapcdn.com/',
+    'https://fluidplayer.com/',
+    'https://other.fluidplayer.com/',
+    'https://googleapis.com/',
+    'https://www.googleapis.com/',
+    'not a url'
+  ];
+  for (const url of allowed) assert.equal(isAllowedUrl(url, allowlist), true, url);
+  for (const url of blocked) assert.equal(isAllowedUrl(url, allowlist), false, url);
 });
 
-test('開発時の通信ログは外部ホスト名と遮断結果だけを記録する', () => {
+test('許可リストが読めない・空のときは初期値を使う', () => {
+  assert.deepEqual(readAllowlist(path.join(__dirname, 'no-such-allowlist.json')), [...DEFAULT_ALLOWLIST]);
+  assert.deepEqual(readAllowlist(ALLOWLIST_PATH), [...DEFAULT_ALLOWLIST]);
+});
+
+test('開発時の通信ログは外部ホスト名と、通した/止めたの結果だけを記録する', () => {
   const logs = [];
   const decisions = [];
-  const handler = createRequestHandler(['realsrv.com'], {
+  const handler = createRequestHandler(['www.tokyomotion.net', 'cdn.fluidplayer.com'], {
     debugHosts: true,
     log: message => logs.push(message)
   });
 
   handler({ url: 'https://syndication.realsrv.com/path?secret=value' }, decision => decisions.push(decision));
+  handler({ url: 'https://cdn.fluidplayer.com/player.js?secret=value' }, decision => decisions.push(decision));
   handler({ url: 'https://www.tokyomotion.net/ajax/video_tag' }, decision => decisions.push(decision));
 
-  assert.deepEqual(decisions, [{ cancel: true }, { cancel: false }]);
-  assert.deepEqual(logs, ['[tm-viewer] host=syndication.realsrv.com blocked']);
-  assert.equal(logs.join('\n').includes('/path'), false);
-  assert.equal(logs.join('\n').includes('secret'), false);
+  assert.deepEqual(decisions, [{ cancel: true }, { cancel: false }, { cancel: false }]);
+  assert.deepEqual(logs, [
+    '[tm-viewer] host=syndication.realsrv.com blocked',
+    '[tm-viewer] host=cdn.fluidplayer.com allowed'
+  ]);
+  assert.equal(logs.join(' ').includes('/path'), false);
+  assert.equal(logs.join(' ').includes('secret'), false);
 });
 
 test('タグ通信の記録対象はサイト本体の POST /ajax/video_tag に限る', () => {

@@ -33,6 +33,7 @@ test('parseUserList はフレンド一覧の名前・最後のページ・総数
   const result = parseUserList(fixture('friends.html'));
   assert.deepEqual(result, {
     users: ['user01', 'user02', 'user03', 'user04'],
+    avatars: {},
     lastPage: 4,
     total: 61,
   });
@@ -47,6 +48,7 @@ test('parseUserList は並び替えリンク・自分・削除ボタンを拾わ
 test('parseUserList は購読一覧を読み、ページ送りが無ければ lastPage 1', () => {
   assert.deepEqual(parseUserList(fixture('subscriptions.html')), {
     users: ['user01', 'user02', 'user03'],
+    avatars: {},
     lastPage: 1,
     total: 7,
   });
@@ -57,6 +59,24 @@ test('parseUserList は同じ人を重複させない', () => {
     <div id="friend_1"><a href="/user/dup">dup</a><a href="/user/dup/">dup</a></div>
     <div id="subscription_2"><a href="https://www.tokyomotion.net/user/dup">dup</a><a href="/user/other">o</a></div>`;
   assert.deepEqual(parseUserList(html).users, ['dup', 'other']);
+});
+
+test('parseUserList は各人の枠の img の src をアイコンとして返す', () => {
+  const html = `
+    <div id="friend_1"><a href="/user/alpha"><img src="https://cdn.example.test/a.jpg" alt=""></a>
+      <a href="#remove_friend" id="remove_profile_friend_1">x</a></div>
+    <div id="friend_2"><a href="/user/beta"><img src="" alt=""></a></div>
+    <div id="subscription_3"><a href="/user/gamma"><img src="/media/avatars/g.jpg"></a></div>
+    <div id="subscription_4"><a href="/user/delta"><img src="javascript:alert(1)"></a></div>`;
+  assert.deepEqual(parseUserList(html), {
+    users: ['alpha', 'beta', 'gamma', 'delta'],
+    avatars: {
+      alpha: 'https://cdn.example.test/a.jpg',
+      gamma: 'https://www.tokyomotion.net/media/avatars/g.jpg',
+    },
+    lastPage: 1,
+    total: null,
+  });
 });
 
 test('parseVideoList は 18 件・全部 PRIVATE・最後のページ 38・総数 686 を読む', () => {
@@ -121,19 +141,42 @@ test('parseVideoList はタイトルが空なら img の alt、src があれば�
 
 test('読めない入力では例外を投げず空・null・lastPage 1 を返す', () => {
   for (const input of ['', UNRELATED_HTML, null, undefined, 42]) {
-    assert.deepEqual(parseUserList(input), { users: [], lastPage: 1, total: null });
+    assert.deepEqual(parseUserList(input), { users: [], avatars: {}, lastPage: 1, total: null });
     assert.deepEqual(parseVideoList(input), { videos: [], lastPage: 1, total: null });
     assert.deepEqual(parseVideoTags(input), []);
   }
 });
 
-test('parseVideoTags は仮の形（JSON 配列・tags 配列・HTML のリンク）を読む', () => {
-  assert.deepEqual(parseVideoTags('["a", "b", "a"]'), ['a', 'b']);
-  assert.deepEqual(parseVideoTags('{"tags": [{"name": "x"}, "y"]}'), ['x', 'y']);
-  assert.deepEqual(parseVideoTags({ tags: ['z'] }), ['z']);
-  assert.deepEqual(
-    parseVideoTags('<a href="/search?search_query=t1">t1</a> <a href="/tags/t2"> t2 </a>'),
-    ['t1', 't2'],
-  );
-  assert.deepEqual(parseVideoTags('{"ok": true}'), []);
+// /ajax/video_tag の応答の形（DESIGN 8 章）。タグ名は架空。
+function tagResponse(msg) {
+  return JSON.stringify({ status: 0, msg });
+}
+
+test('parseVideoTags は JSON の msg にある a.tag のテキストを読み、投票ボタンは無視する', () => {
+  const msg = `
+    <div class="tags">
+      <a class="tag" href="/search?search_query=%E3%82%BF%E3%82%B0A&search_type=videos"> タグA </a>
+      <a href="#" onclick="tagvp(1, 'up'); return false;"><i class="fa fa-thumbs-up"></i>1</a>
+      <a class="tag" href="/search?search_query=tagB&search_type=videos">タグB</a>
+      <a href="#" onclick="tagvp(2, 'down'); return false;">2</a>
+      <a class="tag" href="/search?search_query=%E3%82%BF%E3%82%B0A">タグA</a>
+      <a class="tag" href="/search?search_query="> </a>
+    </div>`;
+  assert.deepEqual(parseVideoTags(tagResponse(msg)), ['タグA', 'タグB']);
+});
+
+test('parseVideoTags は壊れた応答・タグ無しでは空配列', () => {
+  for (const input of [
+    '{"status":0,"msg":',
+    '<a class="tag">タグA</a>',
+    '["タグA"]',
+    '{"status":0}',
+    '{"status":0,"msg":""}',
+    '{"status":0,"msg":42}',
+    tagResponse('<p>タグはありません</p>'),
+    'null',
+    { status: 0, msg: '<a class="tag">タグA</a>' },
+  ]) {
+    assert.deepEqual(parseVideoTags(input), []);
+  }
 });

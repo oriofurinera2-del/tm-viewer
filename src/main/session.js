@@ -4,8 +4,24 @@ const fs = require('node:fs');
 
 const SITE_HOSTS = new Set(['tokyomotion.net', 'www.tokyomotion.net']);
 
-function hostnameMatches(hostname, domain) {
-  return hostname === domain || hostname.endsWith(`.${domain}`);
+// サイト表示の通信は許可リストのホストだけ通す（DESIGN 4.5）。
+// 書き方: "example.com" はそのホストだけ、"*.example.com" はそのサブドメインだけ（example.com 自身は含まない）。
+// data/allowlist.json が読めないときは、この初期値を使う。
+const DEFAULT_ALLOWLIST = Object.freeze([
+  'tokyomotion.net',
+  '*.tokyomotion.net',
+  'tokyo-motion.net',
+  '*.tokyo-motion.net',
+  'cdn.fluidplayer.com',
+  '*.bootstrapcdn.com',
+  'fonts.googleapis.com',
+  'fonts.gstatic.com',
+  'ajax.googleapis.com'
+]);
+
+function hostnameMatches(hostname, pattern) {
+  if (pattern.startsWith('*.')) return hostname.endsWith(pattern.slice(1));
+  return hostname === pattern;
 }
 
 function isSiteUrl(value) {
@@ -18,16 +34,17 @@ function isSiteUrl(value) {
   }
 }
 
-function readBlocklist(blocklistPath) {
+function readAllowlist(allowlistPath) {
   try {
-    const values = JSON.parse(fs.readFileSync(blocklistPath, 'utf8'));
-    if (!Array.isArray(values)) return [];
-    return values
+    const values = JSON.parse(fs.readFileSync(allowlistPath, 'utf8'));
+    if (!Array.isArray(values)) return [...DEFAULT_ALLOWLIST];
+    const list = values
       .filter(value => typeof value === 'string')
       .map(value => value.trim().toLowerCase())
-      .filter(Boolean);
+      .filter(value => value && value !== '*.');
+    return list.length > 0 ? list : [...DEFAULT_ALLOWLIST];
   } catch {
-    return [];
+    return [...DEFAULT_ALLOWLIST];
   }
 }
 
@@ -39,9 +56,9 @@ function getHostname(value) {
   }
 }
 
-function isBlockedUrl(value, blocklist) {
+function isAllowedUrl(value, allowlist) {
   const hostname = getHostname(value);
-  return hostname !== null && blocklist.some(domain => hostnameMatches(hostname, domain));
+  return hostname !== null && allowlist.some(pattern => hostnameMatches(hostname, pattern));
 }
 
 function isVideoTagRequest(details) {
@@ -97,11 +114,13 @@ function enableVideoTagDebug(webContents, log = console.log) {
   return true;
 }
 
-function createRequestHandler(blocklist, { debugHosts = false, log = console.log } = {}) {
+function createRequestHandler(allowlist, { debugHosts = false, log = console.log } = {}) {
   return (details, callback) => {
     const hostname = getHostname(details.url);
-    const blocked = hostname !== null && blocklist.some(domain => hostnameMatches(hostname, domain));
+    const blocked = !isAllowedUrl(details.url, allowlist);
 
+    // 開発時だけ、サイト本体以外のホスト名（URL 全体ではない）と通した/止めたを記録する。
+    // 止めたホストでサイトの機能が壊れたら、ここを見て許可リストに足す。
     if (debugHosts && hostname !== null && !SITE_HOSTS.has(hostname)) {
       log(`[tm-viewer] host=${hostname} ${blocked ? 'blocked' : 'allowed'}`);
     }
@@ -109,23 +128,24 @@ function createRequestHandler(blocklist, { debugHosts = false, log = console.log
   };
 }
 
-function configureSession(siteSession, blocklistPath, options) {
-  const blocklist = readBlocklist(blocklistPath);
+function configureSession(siteSession, allowlistPath, options) {
+  const allowlist = readAllowlist(allowlistPath);
   siteSession.webRequest.onBeforeRequest(
     { urls: ['*://*/*'] },
-    createRequestHandler(blocklist, options)
+    createRequestHandler(allowlist, options)
   );
-  return blocklist;
+  return allowlist;
 }
 
 module.exports = {
+  DEFAULT_ALLOWLIST,
   SITE_HOSTS,
   configureSession,
   createRequestHandler,
   enableVideoTagDebug,
   getResponsePreview,
-  isBlockedUrl,
+  isAllowedUrl,
   isSiteUrl,
   isVideoTagRequest,
-  readBlocklist
+  readAllowlist
 };

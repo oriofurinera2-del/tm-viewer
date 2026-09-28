@@ -73,6 +73,16 @@ section { height: 100%; }
 .video-card strong, .video-card span, .video-card small { display: block; padding: 5px 8px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .video-card span, .video-card small { color: #aeb6c5; font-size: 12px; }
 .video-card small { padding-bottom: 8px; color: #82c7ff; }
+.video-card .card-user { display: flex; align-items: center; gap: 6px; }
+.video-card .card-user > span { padding: 0; }
+.video-card .card-user-name { flex: 1; min-width: 0; }
+.video-card .card-posted { flex: none; color: #8b92a3; }
+.avatar { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 20px; height: 20px; overflow: hidden; border-radius: 50%; background: #3a4151; color: #e4e6eb; font-size: 11px; line-height: 1; }
+.video-card .avatar { display: inline-flex; padding: 0; color: #e4e6eb; }
+.avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.video-card .avatar img { height: 100%; }
+#people .person-pick { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.person-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .pager { display: flex; gap: 4px; margin: 12px 0; }
 .visually-hidden {
   position: absolute;

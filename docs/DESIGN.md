@@ -23,7 +23,6 @@ TOKYO Motion を PC で快適に見るための専用ブラウザ（Windows デ�
 
 ### やらないこと
 
-- 動画のダウンロード・保存機能
 - 外部サーバー（すべて各自の PC 内で完結）
 - ID・パスワードの保存や読み取り（**例外**: 4.1 の「ログイン情報の保存」を利用者が設定で有効にした場合のみ。2026-09-28 ユーザー決定）
 - 投稿・コメント・フレンド申請などの書き込み操作の自動化（利用者がサイト表示の中で自分で行う操作は妨げない）
@@ -199,7 +198,7 @@ renderer（アプリ画面）
 └──────────┴──────────────────────────────┘
 ```
 
-- 左: 「すべて」＋フレンド・購読者の一覧（未読数つき、未読のある人が上）。選ぶとその人だけに絞る。
+- 左: 「すべて」＋フレンド・購読者の一覧（**各行にサイトのアイコン**、無ければ頭文字。未読数つき、未読のある人が上）。選ぶとその人だけに絞る。
 - 右: 新着サムネグリッド。
 - 懸念: フレンドが数百人だと左一覧が長い → 未読順の並び＋名前検索で対処。
 - 他の候補: RSS リーダーの「まとめて既読」は取り入れる。TweetDeck 型（人ごとの列）は横に長くなるため不採用寄り。
@@ -214,7 +213,7 @@ state.json        { me, lastOpenedAt, watched: [id...], muted: [ユーザー名.
 credentials.bin   safeStorage で暗号化した { id, password }（4.1 の設定がオンのときだけ存在）
 notes.json        { "<動画ID>": { name, tags: [...], score, user, title, thumb, updatedAt } }
 settings.json     { intervalMs, cacheMinutes, includeSubscriptions, viewableOnly }
-blocklist.json    ["juicyads.com", ...]
+allowlist.json    ["tokyomotion.net", "*.tokyomotion.net", ...]（DESIGN 4.5 の許可リスト）
 ```
 
 個人の全動画の続きを取得するときは `fetchedSitePages` を参照する（2026-09-28 採用）。新しい動画が増えてページの境界がずれる場合も、動画IDで重複を除き、未取得の動画を飛ばさないようにする。

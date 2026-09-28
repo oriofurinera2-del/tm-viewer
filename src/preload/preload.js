@@ -28,6 +28,12 @@ contextBridge.exposeInMainWorld('tmViewer', {
       ipcRenderer.on('feed:person-progress', listener);
       return () => ipcRenderer.removeListener('feed:person-progress', listener);
     },
+    tags: id => ipcRenderer.invoke('feed:tags', id),
+    onSiteTags: callback => {
+      const listener = (_event, value) => callback(value);
+      ipcRenderer.on('feed:site-tags', listener);
+      return () => ipcRenderer.removeListener('feed:site-tags', listener);
+    },
     watch: (id, watched) => ipcRenderer.invoke('feed:watch', id, watched),
     mute: (user, muted) => ipcRenderer.invoke('feed:mute', user, muted)
   }

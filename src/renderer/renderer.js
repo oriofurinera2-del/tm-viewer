@@ -21,15 +21,43 @@ function pager(id, current, pages) {
     b.onclick = () => { state.page = page; void draw(); }; box.append(b);
   });
 }
+// 投稿者のアイコン。画像が無い人は名前の頭文字の丸で代用する。
+function avatar(user, url) {
+  const box = document.createElement('span'); box.className = 'avatar'; box.setAttribute('aria-hidden', 'true');
+  const initial = () => { box.textContent = Array.from(String(user || '?'))[0].toUpperCase(); };
+  if (typeof url === 'string' && /^https?:\/\//.test(url)) {
+    const img = document.createElement('img'); img.alt = ''; img.src = url; img.onerror = () => { img.remove(); initial(); }; box.append(img);
+  } else initial();
+  return box;
+}
+// 推定投稿日（DESIGN 4.3）: 「2026/09/27 頃」。サイトの相対表示はカーソルで出す。
+function postedLabel(video) {
+  if (!Number.isFinite(video.postedAtEst)) return video.ago || '';
+  const d = new Date(video.postedAtEst); const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} 頃`;
+}
 function videoCard(video) {
   const b = document.createElement('button'); b.className = `video-card${video.watched ? ' watched' : ''}`;
   const image = document.createElement('img'); image.alt = ''; image.src = video.thumb || '';
   const title = document.createElement('strong'); title.textContent = video.title || '無題の動画';
-  const info = document.createElement('span'); info.textContent = `${video.user} ・ ${video.duration || ''}`;
+  const info = document.createElement('span'); info.className = 'card-user';
+  const name = document.createElement('span'); name.className = 'card-user-name'; name.textContent = `${video.user} ・ ${video.duration || ''}`;
+  const posted = document.createElement('span'); posted.className = 'card-posted'; posted.textContent = postedLabel(video); posted.title = video.ago || '';
+  info.append(avatar(video.user, video.avatar), name, posted);
   const badges = document.createElement('small'); badges.textContent = [video.isNew && '新着', video.watched && '視聴済み', video.hd && '高画質', video.private && '非公開'].filter(Boolean).join(' '); badges.title = video.ago || '';
-  const tags = document.createElement('small'); tags.textContent = Array.isArray(video.siteTags) ? video.siteTags.join(' ・ ') : '';
+  const tags = document.createElement('small'); tags.className = 'site-tags'; tags.dataset.id = String(video.id); showTags(tags, video.siteTags);
+  // タグ未取得の動画は、カーソルを乗せたときにその 1 本だけ取る（DESIGN 4.2）。
+  if (!Number.isFinite(video.siteTagsAt)) b.addEventListener('mouseenter', () => void loadTags(video.id), { once: true });
   b.append(image, title, info, badges, tags); b.onclick = async () => { await feed.watch(video.id, true); await site.command('navigate', `https://www.tokyomotion.net/video/${video.id}`); setView('site'); };
   return b;
+}
+function showTags(box, values) {
+  const list = Array.isArray(values) ? values : []; box.textContent = list.join(' ・ '); box.title = list.join(' ・ ');
+}
+function updateTags(id, values) { document.querySelectorAll(`.site-tags[data-id="${Number(id)}"]`).forEach(box => showTags(box, values)); }
+async function loadTags(id) {
+  const result = await feed.tags(id).catch(() => null);
+  if (result?.ok) updateTags(id, result.tags);
 }
 function syncSelectedPeople() {
   document.querySelectorAll('.person-pick').forEach(pick => {
@@ -40,9 +68,11 @@ function syncSelectedPeople() {
 async function people(requestId = state.requestId) {
   const values = await feed.people(opts()); if (!isCurrent(requestId)) return;
   const box = $('people'); box.textContent = '';
-  const add = (label, user, unread, muted) => {
+  const add = (label, user, unread, muted, url) => {
     const row = document.createElement('div'); const pick = document.createElement('button');
-    pick.className = 'person-pick'; pick.dataset.user = user || ''; pick.textContent = `${label} (${unread})`;
+    pick.className = 'person-pick'; pick.dataset.user = user || '';
+    const text = document.createElement('span'); text.className = 'person-label'; text.textContent = `${label} (${unread})`;
+    if (user) pick.append(avatar(user, url)); pick.append(text);
     pick.onclick = () => { state.selectedUser = user; state.page = 1; syncSelectedPeople(); void draw(); };
     row.append(pick);
     if (user) { const mute = document.createElement('button'); mute.textContent = muted ? '表示する' : '非表示'; mute.onclick = async () => { await feed.mute(user, !muted); void draw(); }; row.append(mute); }
@@ -50,7 +80,7 @@ async function people(requestId = state.requestId) {
   };
   const list = values.filter(x => !state.search || x.user.toLowerCase().includes(state.search));
   add('すべて', null, list.filter(x => !x.muted).reduce((n, x) => n + x.unread, 0));
-  list.forEach(x => add(x.user + (x.kind === 'subscription' ? '（購読）' : ''), x.user, x.unread, x.muted));
+  list.forEach(x => add(x.user + (x.kind === 'subscription' ? '（購読）' : ''), x.user, x.unread, x.muted, x.avatar));
   syncSelectedPeople();
 }
 function renderResult(result, selectedUser) {
@@ -86,7 +116,16 @@ async function draw(opened = false) {
 document.querySelectorAll('[data-view]').forEach(x => { x.onclick = () => setView(x.dataset.view); });
 $('to-feed').onclick = () => setView('feed'); back.onclick = () => site.command('back'); forward.onclick = () => site.command('forward');
 $('address-form').onsubmit = event => { event.preventDefault(); site.command('navigate', $('address').value.trim()); };
-$('refresh-feed').onclick = async () => { $('refresh-feed').disabled = true; $('feed-progress').textContent = '取得中…'; try { const r = await feed.refresh(opts()); $('feed-progress').textContent = r.message || (r.ok ? '更新完了' : '取得を停止しました'); await draw(); } catch { $('feed-progress').textContent = '取得できませんでした'; } finally { $('refresh-feed').disabled = false; } };
+async function refresh(auto = false) {
+  $('refresh-feed').disabled = true; $('feed-progress').textContent = '取得中…';
+  try {
+    const r = await feed.refresh({ ...opts(), auto });
+    // 自動更新で未ログイン・実行済みのときは何も出さない（ログインしていなければ自動更新しない）。
+    if (auto && (r.skipped || r.loggedIn === false)) { $('feed-progress').textContent = ''; return; }
+    $('feed-progress').textContent = r.message || (r.ok ? '更新完了' : '取得を停止しました'); await draw();
+  } catch { $('feed-progress').textContent = '取得できませんでした'; } finally { $('refresh-feed').disabled = false; }
+}
+$('refresh-feed').onclick = () => void refresh();
 $('viewable-only').onchange = e => { state.viewableOnly = e.target.checked; state.page = 1; void draw(); };
 $('include-subscriptions').onchange = e => { state.includeSubscriptions = e.target.checked; state.selectedUser = null; state.page = 1; void draw(); };
 $('person-search').oninput = e => { state.search = e.target.value.trim().toLowerCase(); void people(); };
@@ -95,9 +134,16 @@ feed.onProgress(progress => {
   const done = Number(progress?.done); const total = Number(progress?.total);
   if (Number.isInteger(done) && done >= 0 && Number.isInteger(total) && total >= 0) $('feed-progress').textContent = `取得中 ${done}/${total}`;
 });
+feed.onSiteTags(value => { if (value && Number.isInteger(value.id)) updateTags(value.id, value.tags); });
 feed.onPersonProgress(progress => {
   if (progress?.requestId !== state.requestId || progress?.user !== state.selectedUser || Number(progress?.page) !== state.page) return;
   const loaded = Number(progress?.loaded); const needed = Number(progress?.needed);
   if (Number.isInteger(loaded) && loaded >= 0 && Number.isInteger(needed) && needed >= 0) $('feed-progress').textContent = `追加取得中 ${Math.min(loaded, needed)}/${needed}`;
 });
 new ResizeObserver(bounds).observe($('site-area')); bounds();
+// 起動時（DESIGN 4.4）: 保存済みのフィードがあれば先にフィード画面で表示し、裏で 1 回だけ自動更新する。
+(async () => {
+  const saved = await feed.get(opts()).catch(() => null);
+  if (saved?.total > 0) setView('feed');
+  await refresh(true);
+})();
