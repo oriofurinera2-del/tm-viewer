@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>fixture</title></head>
+<!-- /user/<自分>/subscriptions。2026-09-28 取得。実際は 7 人・ページ送りなしだが 3 人に削ってある。名前は架空の値に置換済み -->
+<body><div class="panel panel-default">
+<div class="panel-heading">
+my_name 購読
+</div>
+<div class="panel-body">
+<div class="btn-group">
+<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">最近の購読物 <span class="caret"></span></button>
+<ul class="dropdown-menu">
+<li class="active"><a href="/user/my_name/subscriptions?o=subscribe_date">最近の購読物</a></li>
+<li><a href="/user/my_name/subscriptions?o=recent_users">最近のユーザー</a></li>
+<li><a href="/user/my_name/subscriptions?o=recent_logins">最近のログイン</a></li>
+<li><a href="/user/my_name/subscriptions?o=username">ユーザーネーム</a></li>
+</ul>
+</div>
+<div class="clearfix"></div>
+<div id="remove_subscription_message" class="m-t-15"></div>
+<div class="m-t-15">
+公開中 <span class="text-white">1</span> へ <span class="text-white">7</span> の <span class="text-white">7</span> subscriptions.
+</div>
+<div class="row">
+<div id="subscription_2546" class="col-xs-6 col-md-3 m-t-15">
+<div class="thumb-overlay">
+<a href="/user/user01">
+<img src="" alt="" class="img-responsive">
+<div class="video-title title-truncate">user01</div>
+</a>
+<div class="actions">
+<a href="#remove_subscription" id="remove_subscription_2546" class="btn btn-danger btn-xs remove-btn hidden-xs">削除</a>
+<a href="#remove_subscription" id="remove_subscription_2546" class="btn btn-danger remove-btn visible-xs"><i class="glyphicon glyphicon-remove"></i> 削除</a>
+</div>
+</div>
+</div>
+<div id="subscription_2831" class="col-xs-6 col-md-3 m-t-15">
+<div class="thumb-overlay">
+<a href="/user/user02">
+<img src="" alt="" class="img-responsive">
+<div class="video-title title-truncate">user02</div>
+</a>
+<div class="actions">
+<a href="#remove_subscription" id="remove_subscription_2831" class="btn btn-danger btn-xs remove-btn hidden-xs">削除</a>
+<a href="#remove_subscription" id="remove_subscription_2831" class="btn btn-danger remove-btn visible-xs"><i class="glyphicon glyphicon-remove"></i> 削除</a>
+</div>
+</div>
+</div>
+<div id="subscription_2519" class="col-xs-6 col-md-3 m-t-15">
+<div class="thumb-overlay">
+<a href="/user/user03">
+<img src="" alt="" class="img-responsive">
+<div class="video-title title-truncate">user03</div>
+</a>
+<div class="actions">
+<a href="#remove_subscription" id="remove_subscription_2519" class="btn btn-danger btn-xs remove-btn hidden-xs">削除</a>
+<a href="#remove_subscription" id="remove_subscription_2519" class="btn btn-danger remove-btn visible-xs"><i class="glyphicon glyphicon-remove"></i> 削除</a>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div></body>
+</html>

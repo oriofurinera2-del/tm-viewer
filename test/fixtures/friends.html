@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>fixture</title></head>
+<!-- /user/<自分>/friends（1 ページ目）。2026-09-28 取得。実際は 1 ページ 20 人だが 4 人に削ってある。自分の名前は my_name、ほかは架空の名前に置換済み。上部のメニュー（自分の名前の出る部分）も含む -->
+<body><ul class="nav navbar-nav navbar-right"><li class="dropdown">
+<a class="dropdown-toggle" data-toggle="dropdown" href="#">
+<span class="visible-xs">
+my_name <span class="caret"></span>
+</span>
+<span class="hidden-xs">
+my_name <span class="caret"></span>
+</span>
+</a>
+<ul class="dropdown-menu pull-right m-t-0">
+<li><a href="/user">My Profile</a></li>
+<li><a href="/user/my_name/videos">My Videos</a></li> <li><a href="/user/my_name/albums">My Photos</a></li> <li><a href="/feeds">私のフィード</a></li>
+<li><a href="/requests"><span class="pull-left">リクエスト</span><div class="clearfix"></div></a></li>
+<li><a href="/mail/inbox"><span class="pull-left">受信箱</span><div class="clearfix"></div></a></li>
+</ul>
+</li></ul><div class="panel panel-default">
+<div class="panel-heading">
+my_name 友達
+</div>
+<div class="panel-body">
+<div class="btn-group">
+<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">最近の友達 <span class="caret"></span></button>
+<ul class="dropdown-menu">
+<li class="active"><a href="/user/my_name/friends?o=invite_date">最近の友達</a></li>
+<li><a href="/user/my_name/friends?o=recent_users">最近のユーザー</a></li>
+<li><a href="/user/my_name/friends?o=recent_logins">最近のログイン</a></li>
+<li><a href="/user/my_name/friends?o=username">ユーザーネーム</a></li>
+</ul>
+</div>
+<div class="clearfix"></div>
+<div id="remove_friend_message" class="m-t-15"></div>
+<div class="m-t-15">
+公開中 <span class="text-white">1</span> へ <span class="text-white">20</span> の <span class="text-white">61</span> 友達.
+</div>
+<div class="row">
+<div id="friend_1137" class="col-xs-6 col-md-3 m-t-15">
+<div class="thumb-overlay">
+<a href="/user/user01">
+<img src="" alt="" class="img-responsive">
+<div class="video-title title-truncate">user01</div>
+</a>
+<div class="actions">
+<a href="#remove_friend" id="remove_profile_friend_1137" class="btn btn-danger btn-xs remove-btn hidden-xs">削除</a>
+<a href="#remove_friend" id="remove_profile_friend_1137" class="btn btn-danger remove-btn visible-xs"><i class="glyphicon glyphicon-remove"></i> 削除</a>
+</div>
+</div>
+</div>
+<div id="friend_1933" class="col-xs-6 col-md-3 m-t-15">
+<div class="thumb-overlay">
+<a href="/user/user02">
+<img src="" alt="" class="img-responsive">
+<div class="video-title title-truncate">user02</div>
+</a>
+<div class="actions">
+<a href="#remove_friend" id="remove_profile_friend_1933" class="btn btn-danger btn-xs remove-btn hidden-xs">削除</a>
+<a href="#remove_friend" id="remove_profile_friend_1933" class="btn btn-danger remove-btn visible-xs"><i class="glyphicon glyphicon-remove"></i> 削除</a>
+</div>
+</div>
+</div>
+<div id="friend_1684" class="col-xs-6 col-md-3 m-t-15">
+<div class="thumb-overlay">
+<a href="/user/user03">
+<img src="" alt="" class="img-responsive">
+<div class="video-title title-truncate">user03</div>
+</a>
+<div class="actions">
+<a href="#remove_friend" id="remove_profile_friend_1684" class="btn btn-danger btn-xs remove-btn hidden-xs">削除</a>
+<a href="#remove_friend" id="remove_profile_friend_1684" class="btn btn-danger remove-btn visible-xs"><i class="glyphicon glyphicon-remove"></i> 削除</a>
+</div>
+</div>
+</div>
+<div id="friend_1215" class="col-xs-6 col-md-3 m-t-15">
+<div class="thumb-overlay">
+<a href="/user/user04">
+<img src="" alt="" class="img-responsive">
+<div class="video-title title-truncate">user04</div>
+</a>
+<div class="actions">
+<a href="#remove_friend" id="remove_profile_friend_1215" class="btn btn-danger btn-xs remove-btn hidden-xs">削除</a>
+<a href="#remove_friend" id="remove_profile_friend_1215" class="btn btn-danger remove-btn visible-xs"><i class="glyphicon glyphicon-remove"></i> 削除</a>
+</div>
+</div>
+</div>
+</div>
+<div class="visible-xs">
+<ul class="pagination pagination-lg"><li class="active"><span>1</span></li><li class="hidden-xs"><a href="https://www.tokyomotion.net/user/my_name/friends?page=2">2</a></li><li class="hidden-xs"><a href="https://www.tokyomotion.net/user/my_name/friends?page=3">3</a></li><li class="hidden-xs"><a href="https://www.tokyomotion.net/user/my_name/friends?page=4">4</a></li><li><a href="https://www.tokyomotion.net/user/my_name/friends?page=2" class="prevnext">»</a></li></ul>
+</div>
+<div class="hidden-xs">
+<ul class="pagination"><li class="active"><span>1</span></li><li class="hidden-xs"><a href="https://www.tokyomotion.net/user/my_name/friends?page=2">2</a></li><li class="hidden-xs"><a href="https://www.tokyomotion.net/user/my_name/friends?page=3">3</a></li><li class="hidden-xs"><a href="https://www.tokyomotion.net/user/my_name/friends?page=4">4</a></li><li><a href="https://www.tokyomotion.net/user/my_name/friends?page=2" class="prevnext">»</a></li></ul>
+</div>
+</div>
+</div></body>
+</html>

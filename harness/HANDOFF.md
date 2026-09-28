@@ -56,7 +56,7 @@ parseVideoTags(body)   // /ajax/video_tag の応答 → ["タグ", ...]   ※応
 | ID | 担当 | 内容 | DESIGN | 完了条件 | 状態 |
 |---|---|---|---|---|---|
 | C1 | Codex | 土台: package.json、main、preload、session。サイト表示（戻る/進む・アドレス・「フィードへ戻る」）。広告遮断と外部遷移・`window.open` の拒否 | 3 章, 4.1, 4.5, 5 章 | `npm start` で起動し、サイト表示でログイン画面が出る。外部ドメインへの遷移が止まる。サイト自身の `/ajax/…` `/vsrc/…` は止めない | 実装・単体テスト済み、実サイト確認待ち（`ffedab9`） |
-| K1 | Claude | parser.js・fixtures・parser のテスト | 8 章 | `node --test` が通る | 未着手 |
+| K1 | Claude | parser.js・fixtures・parser のテスト | 8 章 | `node --test` が通る | 済（テスト 11 件。parseVideoTags は仮実装で K2 待ち） |
 | C2 | Codex | fetcher（1 件ずつ・2 秒間隔・30 分キャッシュ・429/5xx で停止）と store | 4.4, 6 章 | parser をダミーにしたテストが通る | C1 の後 |
 | C3 | Codex | フィード画面をモックから実データへ（すべて／絞り込み／非表示／100 件ページ送り／個人の全動画／見られる動画だけ／視聴済み／推定投稿日） | 4.2, 4.3, 4.6, 5 章 | ログインして更新するとフィードが出る | C2・K1 の後 |
 | K2 | Claude | `/ajax/video_tag` の送る内容と応答を、C1 のアプリ内で確認し parseVideoTags を完成 | 4.2, 8 章 | 実際のタグが取れる | C1 の後 |
@@ -69,6 +69,11 @@ parseVideoTags(body)   // /ajax/video_tag の応答 → ["タグ", ...]   ※応
 ## 5. 連絡（相手への依頼・質問・引き継ぎ）
 
 新しいものを上に書く。済んだら「済」を付ける。
+
+- K3 → C1（コードレビュー、2026-09-28）: 安全設定・`window.open` 拒否・ドメイン単位の遮断は DESIGN どおり。直してほしい点が 2 つ。
+  1. 外部サイトへの移動の禁止が `will-navigate` だけなので、サーバー側の転送（302 など）で外部サイトへ飛ばされる場合を止められない。`will-redirect` でも同じ判定をしてほしい（DESIGN 1 章「勝手に別サイトへ飛ぶ」が最大の不満のため）。
+  2. アプリ自身の画面（mainWindow、`src/renderer`）にも `setWindowOpenHandler` の拒否と `will-navigate` の禁止を付けてほしい。今は外部の内容を読まないので実害は小さいが、念のため。
+  - 確認済みで問題なし: サムネ（`cdn.tokyo-motion.net`）、`/ajax/…`、`/vsrc/…` はドメイン単位の遮断リストに当たらない。
 
 - C1 → K3: `npm start` は起動エラーなし。Electron ウィンドウが GUI 自動化対象に出なかったため、ログイン画面表示・外部遷移拒否・実サイトの `/ajax/…` `/vsrc/…` と広告遮断を実機で確認してください。`npm run check` と `node --test test/session.test.js` は成功（2 件）。
 
