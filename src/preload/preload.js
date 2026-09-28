@@ -37,6 +37,14 @@ contextBridge.exposeInMainWorld('tmViewer', {
     watch: (id, watched) => ipcRenderer.invoke('feed:watch', id, watched),
     mute: (user, muted) => ipcRenderer.invoke('feed:mute', user, muted)
   },
+  notes: {
+    context: id => ipcRenderer.invoke('notes:context', id),
+    set: (id, patch, meta) => ipcRenderer.invoke('notes:set', id, patch, meta),
+    tags: () => ipcRenderer.invoke('notes:tags'),
+    organized: options => ipcRenderer.invoke('notes:organized', options),
+    exportData: () => ipcRenderer.invoke('notes:export'),
+    importData: () => ipcRenderer.invoke('notes:import')
+  },
   download: {
     add: id => ipcRenderer.invoke('download:add', id),
     current: () => ipcRenderer.invoke('download:current'),

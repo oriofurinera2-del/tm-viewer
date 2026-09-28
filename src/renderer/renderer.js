@@ -1,6 +1,7 @@
 'use strict';
 const site = window.tmViewer.site;
 const feed = window.tmViewer.feed;
+const notes = window.tmViewer.notes;
 const download = window.tmViewer.download;
 const $ = id => document.getElementById(id);
 const state = { selectedUser: null, page: 1, viewableOnly: true, includeSubscriptions: true, search: '', requestId: 0 };
@@ -11,11 +12,12 @@ function opts() { return { includeSubscriptions: state.includeSubscriptions, vie
 function isCurrent(requestId) { return requestId === state.requestId; }
 function setView(name) {
   const show = name === 'site';
-  $('feed').hidden = name !== 'feed'; $('site').hidden = !show; $('downloads').hidden = name !== 'downloads';
+  $('feed').hidden = name !== 'feed'; $('organized').hidden = name !== 'organized'; $('site').hidden = !show; $('downloads').hidden = name !== 'downloads';
   document.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('active', x.dataset.view === name));
   site.command(show ? 'show' : 'hide');
   if (show) bounds();
   else if (name === 'feed') void draw(true);
+  else if (name === 'organized') void drawOrganized();
   else if (name === 'downloads') renderDownloadsTab();
 }
 function bounds() { const r = $('site-area').getBoundingClientRect(); site.setBounds({ width: r.width, height: r.height }); }

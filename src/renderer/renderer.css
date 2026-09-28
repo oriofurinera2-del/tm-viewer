@@ -88,6 +88,43 @@ section { height: 100%; }
 #people .person-pick { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .person-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .pager { display: flex; gap: 4px; margin: 12px 0; }
+#organized { overflow: auto; padding: 18px; }
+#org-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+#org-tags button { padding: 2px 10px; border: 1px solid #3a4151; border-radius: 10px; background: #242833; font-size: 12px; }
+#org-tags button.on { background: #4f8cff; border-color: #4f8cff; color: #fff; }
+#org-site-tag { padding: 4px 8px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; }
+#org-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px; min-height: 80px; margin-top: 12px; }
+
+/* 独自の名前・タグ・得点（4.8） */
+.video-card .stars { display: flex; padding: 4px 8px 0; }
+.video-card .star { padding: 0 1px; border: 0; background: none; font-size: 15px; line-height: 1; color: #444b5a; }
+.video-card .star.on { color: #f5c542; }
+.video-card .custom-title { font-weight: 600; font-size: 14px; }
+.video-card .orig-title { color: #8b92a3; font-size: 11px; padding-top: 0; }
+.video-card .custom-tags { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 8px 0; }
+.video-card .custom-tags .utag { display: inline-block; padding: 1px 7px; border-radius: 8px; background: #2f3a52; color: #c5d3f0; font-size: 10px; }
+.video-card .edit-toggle { position: absolute; top: 6px; left: 6px; padding: 2px 7px; border: 1px solid #3a4151; border-radius: 4px; background: rgba(22, 24, 29, .85); font-size: 12px; }
+.card-edit { padding: 8px; border: 1px solid #353b49; border-top: 0; border-radius: 0 0 6px 6px; background: #20242d; display: flex; flex-direction: column; gap: 6px; }
+.card-edit input { padding: 4px 7px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; font: inherit; width: 100%; }
+.card-edit .chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.card-edit .chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 9px; border-radius: 11px; background: #2f3a52; font-size: 12px; }
+.card-edit .chip button { background: none; border: 0; padding: 0 4px; color: #8b92a3; }
+.card-edit .chip button:hover { color: #e4e6eb; }
+
+/* サイト表示: 動画ページを開いているときの入力バー（4.8） */
+.metabar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; padding: 7px 12px; flex: none; background: #20242d; border-bottom: 1px solid #2e3340; }
+.metabar .field { display: flex; align-items: center; gap: 6px; }
+.metabar .lbl { color: #8b92a3; font-size: 12px; }
+.metabar .name-in { width: 220px; }
+.metabar .tag-in { width: 140px; }
+.metabar input { padding: 5px 8px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; font: inherit; }
+.metabar .chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.metabar .chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 9px; border-radius: 11px; background: #2f3a52; font-size: 12px; }
+.metabar .chip button { background: none; border: 0; padding: 0 4px; color: #8b92a3; }
+.metabar .stars { display: flex; }
+.metabar .star { background: none; border: none; padding: 0 1px; font-size: 19px; line-height: 1; color: #444b5a; }
+.metabar .star.on { color: #f5c542; }
+
 #downloads { overflow: auto; padding: 18px; }
 #downloads-list { display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
 .download-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid #2e3340; border-radius: 6px; background: #1d2027; }

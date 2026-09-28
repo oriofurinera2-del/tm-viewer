@@ -8,6 +8,7 @@ const { createFetcher } = require('./fetcher');
 const { createStore } = require('./store');
 const { parseMe, parseUserList, parseVideoList, parseVideoTags } = require('./parser');
 const { createFeedService } = require('./feed');
+const notes = require('./notes');
 const {
   CanceledError,
   READ_PLAYER_SOURCES_SCRIPT,
@@ -343,20 +344,26 @@ async function saveVideo(job, found, onProgress) {
   return { fileName: path.basename(savePath), filePath: savePath };
 }
 
-// ファイル名に使う独自の名前（DESIGN 4.8）と元のタイトル。
-function videoNames(id, pageTitle) {
-  const note = appStore?.loadNotes()?.[id];
+// 動画ページのタイトル。サイト表示で今その動画を開いているときだけ webContents から読む。
+function currentPageTitle(id) {
+  return siteView && videoIdFromUrl(siteView.webContents.getURL()) === id ? siteView.webContents.getTitle() : '';
+}
+
+// 独自の名前・タグ・得点（DESIGN 4.8）と、無いときの元のタイトル・投稿者・サムネ。
+// ダウンロードのファイル名にも、サイト表示の上部バーの入力初期値にも使う。
+function noteContext(id, pageTitle = currentPageTitle(id)) {
+  const raw = appStore?.loadNotes()?.[id];
+  const note = notes.normalizeNoteRecord(raw || {});
   const saved = feedService?.findVideo(id);
   const title = saved?.title
-    || (typeof note?.title === 'string' ? note.title : '')
+    || note.title
     || String(pageTitle || '').replace(/\s*[-|]\s*TOKYO\s*Motion\s*$/i, '');
-  return { name: typeof note?.name === 'string' ? note.name : '', title };
+  return { name: note.name, tags: note.tags, score: note.score, title, user: saved?.user || note.user, thumb: saved?.thumb || note.thumb };
 }
 
 function addDownload(id) {
   if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, message: '動画IDが正しくありません' };
-  const pageTitle = siteView && videoIdFromUrl(siteView.webContents.getURL()) === id ? siteView.webContents.getTitle() : '';
-  const { name, title } = videoNames(id, pageTitle);
+  const { name, title } = noteContext(id);
   const added = downloadQueue.add({ id, name, title });
   return { ok: added, message: added ? null : 'すでに保存待ちです' };
 }
@@ -438,10 +445,14 @@ ipcMain.handle('feed:tags', async (_event, id) => {
   }
 });
 
-ipcMain.handle('feed:open', (_event, options) => feedService.openFeed(options));
-ipcMain.handle('feed:get', (_event, options) => feedService.getFeed(options));
+// フィードのカードに独自の名前・タグ・得点を付けて返す（DESIGN 4.8）。
+function withNotes(result) {
+  return { ...result, videos: notes.attachNotes(result.videos, appStore.loadNotes()) };
+}
+ipcMain.handle('feed:open', (_event, options) => withNotes(feedService.openFeed(options)));
+ipcMain.handle('feed:get', (_event, options) => withNotes(feedService.getFeed(options)));
 ipcMain.handle('feed:people', (_event, options) => feedService.getPeople(options));
-ipcMain.handle('feed:person-page', (event, options) => feedService.getPersonPage({
+ipcMain.handle('feed:person-page', async (event, options) => withNotes(await feedService.getPersonPage({
   ...options,
   onProgress: progress => event.sender.send('feed:person-progress', {
     ...progress,
@@ -449,7 +460,7 @@ ipcMain.handle('feed:person-page', (event, options) => feedService.getPersonPage
     page: options?.page,
     requestId: options?.requestId
   })
-}));
+})));
 ipcMain.handle('feed:watch', (_event, id, watched) => {
   feedService.markWatched(id, watched !== false);
   return true;
@@ -457,6 +468,77 @@ ipcMain.handle('feed:watch', (_event, id, watched) => {
 ipcMain.handle('feed:mute', (_event, user, muted) => {
   feedService.setMuted(user, muted);
   return true;
+});
+
+// ---- 独自の名前・タグ・得点（DESIGN 4.8） ----
+
+ipcMain.handle('notes:context', (_event, id) => {
+  id = Number(id);
+  return Number.isSafeInteger(id) && id > 0 ? noteContext(id) : null;
+});
+
+ipcMain.handle('notes:set', (_event, id, patch, meta) => {
+  id = Number(id);
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  const all = appStore.loadNotes();
+  const normalized = notes.normalizePatch(patch);
+  if (notes.isEmptyNote(normalized)) {
+    if (all[id]) { delete all[id]; appStore.saveNotes(all); }
+    return null;
+  }
+  const saved = feedService.findVideo(id);
+  const fallback = noteContext(id);
+  all[id] = {
+    ...normalized,
+    user: (typeof meta?.user === 'string' && meta.user) || saved?.user || fallback.user,
+    title: (typeof meta?.title === 'string' && meta.title) || saved?.title || fallback.title,
+    thumb: (typeof meta?.thumb === 'string' && meta.thumb) || saved?.thumb || fallback.thumb,
+    updatedAt: Date.now()
+  };
+  appStore.saveNotes(all);
+  return all[id];
+});
+
+ipcMain.handle('notes:tags', () => notes.allCustomTags(appStore.loadNotes()));
+
+ipcMain.handle('notes:organized', (_event, options) => notes.organizedList({
+  ...options,
+  notes: appStore.loadNotes(),
+  findVideo: id => feedService.findVideo(id)
+}));
+
+ipcMain.handle('notes:export', async () => {
+  if (!mainWindow) return { ok: false };
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: '整理データの書き出し',
+    defaultPath: 'tm-viewer-notes.json',
+    filters: [{ name: 'JSON', extensions: ['json'] }]
+  });
+  if (result.canceled || !result.filePath) return { ok: false };
+  try {
+    fs.writeFileSync(result.filePath, `${JSON.stringify(appStore.loadNotes(), null, 2)}\n`, 'utf8');
+    return { ok: true, filePath: result.filePath };
+  } catch {
+    return { ok: false, message: '書き出しに失敗しました' };
+  }
+});
+
+ipcMain.handle('notes:import', async () => {
+  if (!mainWindow) return { ok: false };
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '整理データの読み込み',
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+    properties: ['openFile']
+  });
+  if (result.canceled || !result.filePaths[0]) return { ok: false };
+  try {
+    const incoming = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf8'));
+    const merged = notes.mergeForImport(appStore.loadNotes(), incoming);
+    appStore.saveNotes(merged);
+    return { ok: true, count: Object.keys(merged).length };
+  } catch {
+    return { ok: false, message: '読み込みに失敗しました（JSON の形式を確認してください）' };
+  }
 });
 
 ipcMain.on('site:bounds', (_event, bounds) => resizeSiteView(bounds));

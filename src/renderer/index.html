@@ -11,6 +11,7 @@
     <span class="app-name">TM Viewer</span>
     <nav aria-label="画面">
       <button type="button" data-view="feed">フィード</button>
+      <button type="button" data-view="organized">整理した動画</button>
       <button type="button" data-view="site" class="active">サイト表示</button>
       <button type="button" data-view="downloads">ダウンロード</button>
     </nav>
@@ -30,6 +31,8 @@
           <label><input id="viewable-only" type="checkbox" checked> 見られる動画だけ</label>
           <label><input id="include-subscriptions" type="checkbox" checked> 購読を含める</label>
           <button type="button" id="download-dir">保存先…</button>
+          <button type="button" id="notes-export">整理データを書き出す</button>
+          <button type="button" id="notes-import">整理データを読み込む</button>
           <span class="download-status" role="status"></span>
         </div>
         <h1 id="feed-title">すべて</h1>
@@ -37,6 +40,35 @@
         <div id="feed-grid"></div>
         <div id="feed-pager-bottom" class="pager"></div>
       </div>
+    </section>
+
+    <section id="organized" hidden>
+      <div class="feed-tools">
+        <span class="filter-label">独自タグ</span>
+        <div id="org-tags" class="chips"></div>
+        <span class="filter-label">サイトのタグ</span>
+        <select id="org-site-tag"><option value="">指定なし</option></select>
+        <label>得点
+          <select id="org-min">
+            <option value="0">指定なし</option>
+            <option value="5">★5</option>
+            <option value="4">★4 以上</option>
+            <option value="3">★3 以上</option>
+            <option value="2">★2 以上</option>
+            <option value="1">★1 以上</option>
+          </select>
+        </label>
+        <label>並べ替え
+          <select id="org-sort">
+            <option value="score">得点順</option>
+            <option value="added">付けた順</option>
+          </select>
+        </label>
+        <span id="org-count" class="filter-label"></span>
+      </div>
+      <div id="org-pager-top" class="pager"></div>
+      <div id="org-grid"></div>
+      <div id="org-pager-bottom" class="pager"></div>
     </section>
 
     <section id="site">
@@ -52,6 +84,7 @@
         <span class="download-status" role="status"></span>
         <span>広告遮断中</span>
       </div>
+      <div class="metabar" id="site-metabar" hidden></div>
       <div id="site-area" aria-label="TOKYO Motion のサイト表示"></div>
     </section>
 
