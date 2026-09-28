@@ -8,6 +8,8 @@ const {
   buildFileName,
   createDownloadQueue,
   extensionFor,
+  httpErrorMessage,
+  isVideoContentType,
   pickVideoUrl,
   sanitizeFileName,
   uniqueFilePath,
@@ -42,6 +44,21 @@ test('拡張子はファイル名・MIME・URL の順で決め、無ければ mp
   assert.equal(extensionFor({ filename: 'download', mimeType: 'video/webm' }), 'webm');
   assert.equal(extensionFor({ url: 'https://cdn.tokyomotion.net/a/b.m4v?x=1' }), 'm4v');
   assert.equal(extensionFor({ filename: '', mimeType: 'application/octet-stream', url: 'https://www.tokyomotion.net/vsrc/sd/1' }), 'mp4');
+});
+
+test('HTTP の状態コードから拒否の理由を日本語にする', () => {
+  assert.equal(httpErrorMessage(403), 'サイトが保存を拒否しました（HTTP 403）');
+  assert.equal(httpErrorMessage(500), 'サイトが保存を拒否しました（HTTP 500）');
+});
+
+test('Content-Type が動画かどうかを判定する', () => {
+  assert.equal(isVideoContentType('video/mp4'), true);
+  assert.equal(isVideoContentType('video/mp4; charset=binary'), true);
+  assert.equal(isVideoContentType('application/octet-stream'), true);
+  assert.equal(isVideoContentType('APPLICATION/OCTET-STREAM'), true);
+  assert.equal(isVideoContentType('text/html; charset=utf-8'), false);
+  assert.equal(isVideoContentType(''), false);
+  assert.equal(isVideoContentType(null), false);
 });
 
 test('動画ページの URL から動画 ID を読む', () => {

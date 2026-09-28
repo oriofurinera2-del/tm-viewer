@@ -13,6 +13,8 @@ const {
   buildFileName,
   createDownloadQueue,
   extensionFor,
+  httpErrorMessage,
+  isVideoContentType,
   pickVideoUrl,
   uniqueFilePath,
   videoIdFromUrl,
@@ -242,46 +244,62 @@ async function resolveVideoUrl(job) {
 }
 
 // ログイン済みのセッション（persist:tm）のまま保存する。
-function saveVideo(job, found, onProgress) {
+// ses.downloadURL は失敗の理由が分からないため、ses.fetch（同じ session の Cookie を使う）で取得し、
+// 応答を確認してから自分でファイルに書き込む。
+async function saveVideo(job, found, onProgress) {
   const ses = siteView.webContents.session;
-  const normalize = value => { try { return new URL(value).href; } catch { return String(value); } };
-  return new Promise((resolve, reject) => {
-    // 保存が始まらないまま待ち続けないようにする。
-    const timer = setTimeout(() => {
-      ses.removeListener('will-download', onWillDownload);
-      reject(new Error('保存を始められませんでした'));
-    }, PAGE_LOAD_TIMEOUT_MS);
-    const onWillDownload = (_event, item) => {
-      const chain = item.getURLChain();
-      if (normalize(chain[0]) !== normalize(found.url)) return;
-      clearTimeout(timer);
-      ses.removeListener('will-download', onWillDownload);
-      const fileName = buildFileName({
-        name: job.name,
-        title: job.title,
-        id: job.id,
-        ext: extensionFor({ filename: item.getFilename(), mimeType: item.getMimeType(), url: chain[chain.length - 1] })
-      });
-      const savePath = uniqueFilePath(downloadDir(), fileName, fs.existsSync);
-      item.setSavePath(savePath);
-      item.on('updated', () => {
-        const total = item.getTotalBytes();
-        onProgress(total > 0 ? (item.getReceivedBytes() / total) * 100 : null);
-      });
-      item.once('done', (_doneEvent, state) => {
-        if (state === 'completed') resolve({ fileName: path.basename(savePath) });
-        else reject(new Error(state === 'cancelled' ? '保存を取り消しました' : '保存に失敗しました'));
-      });
-    };
-    ses.on('will-download', onWillDownload);
-    try {
-      ses.downloadURL(found.url, { headers: { Referer: videoPageUrl(job.id) } });
-    } catch {
-      clearTimeout(timer);
-      ses.removeListener('will-download', onWillDownload);
-      reject(new Error('保存を始められませんでした'));
-    }
+  let response;
+  try {
+    response = await ses.fetch(found.url, { headers: { Referer: videoPageUrl(job.id) } });
+  } catch {
+    throw new Error('保存を始められませんでした');
+  }
+
+  const contentType = response.headers.get('content-type');
+  if (DEBUG_HOSTS) {
+    let host = '';
+    try { host = new URL(response.url).hostname; } catch { /* 無視 */ }
+    console.log('[download]', response.status, contentType, host);
+  }
+  if (!response.ok) throw new Error(httpErrorMessage(response.status));
+  if (!isVideoContentType(contentType)) {
+    const shown = typeof contentType === 'string' ? contentType.split(';')[0].trim() : '';
+    throw new Error(`動画ではない応答でした（${shown || '不明'}）`);
+  }
+
+  const fileName = buildFileName({
+    name: job.name,
+    title: job.title,
+    id: job.id,
+    ext: extensionFor({ mimeType: contentType, url: response.url })
   });
+  const savePath = uniqueFilePath(downloadDir(), fileName, fs.existsSync);
+  const tmpPath = `${savePath}.part`;
+  const total = Number(response.headers.get('content-length')) || 0;
+  let received = 0;
+
+  const fileStream = fs.createWriteStream(tmpPath);
+  try {
+    const reader = response.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      received += chunk.length;
+      await new Promise((resolve, reject) => {
+        fileStream.write(chunk, error => (error ? reject(error) : resolve()));
+      });
+      onProgress(total > 0 ? (received / total) * 100 : null);
+    }
+    await new Promise((resolve, reject) => fileStream.end(error => (error ? reject(error) : resolve())));
+  } catch {
+    fileStream.destroy();
+    try { fs.unlinkSync(tmpPath); } catch { /* 無視 */ }
+    throw new Error('保存に失敗しました');
+  }
+
+  fs.renameSync(tmpPath, savePath);
+  return { fileName: path.basename(savePath) };
 }
 
 // ファイル名に使う独自の名前（DESIGN 4.8）と元のタイトル。

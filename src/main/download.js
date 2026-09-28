@@ -102,6 +102,17 @@ function sanitizeFileName(value) {
   return name;
 }
 
+// HTTP の状態コードから日本語のエラーメッセージを作る（保存を拒否された理由を伝える）。
+function httpErrorMessage(status) {
+  return `サイトが保存を拒否しました（HTTP ${status}）`;
+}
+
+// Content-Type が動画（またはバイト列）と言えるかどうか。text/html などは動画ではない。
+function isVideoContentType(value) {
+  const type = typeof value === 'string' ? value.split(';')[0].trim().toLowerCase() : '';
+  return type.startsWith('video/') || type === 'application/octet-stream';
+}
+
 function extensionFor({ filename, mimeType, url } = {}) {
   const fromName = value => {
     const ext = path.extname(String(value || '')).slice(1).toLowerCase();
@@ -208,6 +219,8 @@ module.exports = {
   buildFileName,
   createDownloadQueue,
   extensionFor,
+  httpErrorMessage,
+  isVideoContentType,
   isVideoHostUrl,
   pickVideoUrl,
   sanitizeFileName,
