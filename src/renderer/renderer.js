@@ -28,12 +28,24 @@ function setView(name) {
 }
 function bounds() { const r = $('site-area').getBoundingClientRect(); site.setBounds({ width: r.width, height: r.height }); }
 function pager(id, current, pages, onGo) {
-  const go = onGo || (page => { state.page = page; void draw(); });
+  // 既定（フィード）: ページ移動したら内容の先頭までスクロールを戻す。
+  const go = onGo || (page => { state.page = page; void draw(); const c = $('feed-content'); if (c) c.scrollTop = 0; });
   const box = $(id); box.textContent = ''; if (pages < 2) return;
   [['前へ', current - 1], ...Array.from({ length: pages }, (_, i) => [String(i + 1), i + 1]), ['次へ', current + 1]].forEach(([label, page]) => {
     const b = document.createElement('button'); b.textContent = label; b.disabled = page < 1 || page > pages || page === current;
+    if (page === current) b.classList.add('current'); // 今開いているページを強調
     b.onclick = () => go(page); box.append(b);
   });
+}
+
+// 指定した投稿者だけの動画に切り替える（カードの投稿者クリック・左の友達名クリック共通の入口）。
+function selectPerson(user) {
+  if (!user) return;
+  state.selectedUser = user; state.page = 1;
+  setView('feed');
+  syncSelectedPeople();
+  const c = $('feed-content'); if (c) c.scrollTop = 0;
+  void draw();
 }
 
 // ---- 検索タブの Google（DESIGN 4.10 案A）: 「探す」（googleView）と「取り込んだ動画」を切り替える ----
@@ -244,7 +256,16 @@ function videoCard(video, { url = `https://www.tokyomotion.net/video/${video.id}
   const info = document.createElement('span'); info.className = 'card-user';
   const nameSpan = document.createElement('span'); nameSpan.className = 'card-user-name'; nameSpan.textContent = video.user;
   const posted = document.createElement('span'); posted.className = 'card-posted'; posted.textContent = postedLabel(video); posted.title = video.ago || '';
-  info.append(avatar(video.user, video.avatar), nameSpan, posted);
+  const av = avatar(video.user, video.avatar);
+  // 投稿者（アイコン・名前）をクリックしたら、その投稿者だけの動画に切り替える（左の友達名クリックと同じ）。
+  if (video.user) {
+    for (const el of [av, nameSpan]) {
+      el.classList.add('user-link');
+      el.title = `${video.user} の動画だけ表示`;
+      el.onclick = e => { e.stopPropagation(); selectPerson(video.user); };
+    }
+  }
+  info.append(av, nameSpan, posted);
   const badges = document.createElement('small'); badges.textContent = [sourceLabel, video.isNew && '新着', video.watched && '視聴済み', video.hd && '高画質', video.private && '非公開'].filter(Boolean).join(' '); badges.title = video.ago || '';
   const starsBox = document.createElement('div'); starsBox.className = 'stars';
   const customTagsBox = document.createElement('div'); customTagsBox.className = 'custom-tags';
