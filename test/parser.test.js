@@ -239,24 +239,27 @@ test('parseGoogleNextPageHref はページ内の a#pnnext の href を返し、�
   for (const input of ['', null, undefined]) assert.equal(parseGoogleNextPageHref(input), null);
 });
 
-test('parseVideoPage はサムネ img（/media/videos/）を優先し、無ければ og:image を使う', () => {
+test('parseVideoPage は og:image（その動画のサムネ）を優先し、関連動画の画像は拾わない', () => {
+  // ページには関連動画の /media/videos/ 画像が先に並ぶが、その動画のサムネは og:image。
   const withThumb = `
-    <html><head><meta property="og:image" content="https://cdn.tokyo-motion.net/og.jpg">
+    <html><head><meta property="og:image" content="https://cdn.tokyo-motion.net/media/videos/tmb143/101/default.jpg">
     <meta property="og:video:duration" content="6952"></head>
     <body><a href="/user/poster01">poster01</a>
-    <img src="https://cdn.tokyo-motion.net/media/videos/tmb9/101/1.jpg"></body></html>`;
+    <img src="https://cdn.tokyo-motion.net/media/videos/tmb166/999/1.jpg"></body></html>`;
   assert.deepEqual(parseVideoPage(withThumb), {
-    thumb: 'https://cdn.tokyo-motion.net/media/videos/tmb9/101/1.jpg',
+    thumb: 'https://cdn.tokyo-motion.net/media/videos/tmb143/101/default.jpg',
     user: 'poster01',
     duration: '1:55:52'
   });
 });
 
-test('parseVideoPage はサムネ img が無ければ og:image、投稿者リンクが無ければ空', () => {
-  const ogOnly = `
-    <html><head><meta property="og:image" content="https://cdn.tokyo-motion.net/og.jpg"></head>
-    <body><img src="https://cdn.tokyo-motion.net/icon.png"></body></html>`;
-  assert.deepEqual(parseVideoPage(ogOnly), { thumb: 'https://cdn.tokyo-motion.net/og.jpg', user: '', duration: '' });
+test('parseVideoPage は og:image が無ければ video[poster]、それも無ければ /media/videos/ 画像', () => {
+  const posterOnly = `
+    <html><body><video poster="https://cdn.tokyo-motion.net/media/videos/tmb1/101/default.jpg"></video></body></html>`;
+  assert.equal(parseVideoPage(posterOnly).thumb, 'https://cdn.tokyo-motion.net/media/videos/tmb1/101/default.jpg');
+  const mediaOnly = `
+    <html><body><img src="https://cdn.tokyo-motion.net/media/videos/tmb1/101/1.jpg"></body></html>`;
+  assert.equal(parseVideoPage(mediaOnly).thumb, 'https://cdn.tokyo-motion.net/media/videos/tmb1/101/1.jpg');
 });
 
 test('parseVideoPage は読めない入力で例外を投げず空を返す', () => {

@@ -752,16 +752,13 @@ async function runGoogleImportLoop(sender) {
   if (!googleView) return { ok: false, reason: 'noview' };
   const run = ++googleImportRun;
   let total = 0;
-  const tInit = Date.now();
   await pollGoogleReady(googleView.webContents);
-  console.log(`[gimport] initial ready=${Date.now() - tInit}ms`);
   for (let page = 0; page < GOOGLE_MAX_PAGES; page += 1) {
     if (run !== googleImportRun) return { ok: false, reason: 'canceled' };
     const url = googleView.webContents.getURL();
     if (isGoogleSorryUrl(url)) { sendGoogleStatus(sender, 'captcha'); return { ok: false, reason: 'captcha', total }; }
     if (!isGoogleSearchPageUrl(url)) { sendGoogleStatus(sender, 'notready'); return { ok: false, reason: 'notready', total }; }
     let html;
-    const tExtract0 = Date.now();
     try {
       html = await googleView.webContents.executeJavaScript('document.documentElement.outerHTML', false);
     } catch {
@@ -770,20 +767,17 @@ async function runGoogleImportLoop(sender) {
     }
     const links = parseGoogleResultLinks(html);
     const next = parseGoogleNextPageHref(html);
-    const tExtract = Date.now() - tExtract0;
     if (links === null) { sendGoogleStatus(sender, 'error'); return { ok: false, reason: 'error', total }; }
     // 結果0かつ次へも無い → CAPTCHA など中断とみなして止める（DESIGN 4.10）。
     if (links.length === 0 && !next) { sendGoogleStatus(sender, 'captcha'); return { ok: false, reason: 'captcha', total }; }
     // 実 URL 解決（goto の 302 叩き）は並列で行う。1 件ずつ待つと 1 ページに数秒かかるため。
     // goto は転送だけの軽いリクエストなので、1 ページ分（約 10 件）まとめて解決してよい。
-    const tResolve0 = Date.now();
     const resolved = await Promise.all(
       links.map(async link => {
         const video = await resolveGoogleLink(link.href, siteSession);
         return video ? { ...video, title: link.title } : null;
       })
     );
-    console.log(`[gimport] page=${page} links=${links.length} extract=${tExtract}ms resolve=${Date.now() - tResolve0}ms next=${next ? 'yes' : 'no'}`);
     if (run !== googleImportRun) return { ok: false, reason: 'canceled' };
     const batch = [];
     for (const video of resolved) {
@@ -802,9 +796,7 @@ async function runGoogleImportLoop(sender) {
     let absNext;
     try { absNext = new URL(next, url).href; } catch { sendGoogleStatus(sender, 'done', { pages: page + 1, total }); return { ok: true, total }; }
     if (run !== googleImportRun) return { ok: false, reason: 'canceled' };
-    const tNav0 = Date.now();
     const moved = await loadGoogleUrl(absNext);
-    console.log(`[gimport] page=${page} nextpage load=${Date.now() - tNav0}ms`);
     if (!moved) { sendGoogleStatus(sender, 'done', { pages: page + 1, total }); return { ok: true, total }; }
   }
   sendGoogleStatus(sender, 'limit', { pages: GOOGLE_MAX_PAGES, total });

@@ -66,7 +66,8 @@ const GOOGLE_NEXT_PAGE_SELECTOR = 'a#pnnext';
 const VIDEO_PAGE_THUMB_SELECTOR = 'img[src]';
 const VIDEO_PAGE_THUMB_SRC = /\/media\/videos\//i;
 const OG_IMAGE_SELECTOR = 'meta[property="og:image"]';
-const OG_DURATION_SELECTOR = 'meta[property="og:video:duration"]';
+// 動画ページは property="video:duration"（秒・小数あり）を持つ。og:video:duration も一応見る。
+const OG_DURATION_SELECTOR = 'meta[property="video:duration"], meta[property="og:video:duration"]';
 const VIDEO_PAGE_USER_SELECTOR = 'a[href*="/user/"]';
 
 // 秒数を mm:ss（1 時間以上は h:mm:ss）にする。読めなければ空文字。
@@ -284,15 +285,20 @@ function parseGoogleNextPageHref(html) {
 function parseVideoPage(html) {
   const $ = load(html);
   if (!$) return { thumb: null, user: '', duration: '' };
-  let thumb = null;
-  $(VIDEO_PAGE_THUMB_SELECTOR).each((_, img) => {
-    if (VIDEO_PAGE_THUMB_SRC.test(cleanText($(img).attr('src')))) {
-      thumb = absoluteUrl($(img).attr('src'));
-      return false;
-    }
-    return undefined;
-  });
-  if (!thumb) thumb = absoluteUrl($(OG_IMAGE_SELECTOR).first().attr('content'));
+  // その動画のサムネは og:image（＝プレイヤーの poster と同じ）。ページには関連動画の
+  // /media/videos/ 画像も多数並ぶので、まず og:image / poster を使う。無ければ最初の
+  // /media/videos/ 画像にフォールバックする（別動画のサムネを拾わないため）。
+  let thumb = absoluteUrl($(OG_IMAGE_SELECTOR).first().attr('content'))
+    || absoluteUrl($('video[poster]').first().attr('poster'));
+  if (!thumb) {
+    $(VIDEO_PAGE_THUMB_SELECTOR).each((_, img) => {
+      if (VIDEO_PAGE_THUMB_SRC.test(cleanText($(img).attr('src')))) {
+        thumb = absoluteUrl($(img).attr('src'));
+        return false;
+      }
+      return undefined;
+    });
+  }
   let user = '';
   $(VIDEO_PAGE_USER_SELECTOR).each((_, link) => {
     const match = USER_PROFILE_PATH.exec(sitePath($(link).attr('href')));
