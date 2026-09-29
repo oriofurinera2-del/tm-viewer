@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, net, session, shell, safeStorage } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const { buildGoogleSearchUrl, configureSession, enableVideoTagDebug, getHostname, isGoogleHost, isGoogleSearchPageUrl, isSiteUrl } = require('./session');
 const { createFetcher } = require('./fetcher');
 const { createStore } = require('./store');
@@ -978,10 +979,38 @@ ipcMain.handle('notes:import', async () => {
 
 ipcMain.on('site:bounds', (_event, bounds) => resizeSiteView(bounds));
 
+// ---- 自動更新（electron-updater・NSIS インストーラ配布） ----
+// 起動時に GitHub Releases の latest.yml を見て新版を検知し、裏で自動ダウンロードする。
+// ダウンロードが終わったら renderer にバナーを出す通知だけ送り、実際の適用（再起動）は
+// 利用者がボタンを押したときにだけ行う（update:install → quitAndInstall）。
+function setupAutoUpdater() {
+  // 開発時（npm start）は latest.yml が無く checkForUpdates が例外になるので動かさない。
+  if (!app.isPackaged) return;
+  autoUpdater.on('update-downloaded', info => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:ready', { version: info?.version || '' });
+    }
+  });
+  // 更新の失敗はアプリ動作を止めない。ログに残すだけで握りつぶす。
+  autoUpdater.on('error', error => {
+    console.error('[tm-viewer] auto-update error:', error?.message || error);
+  });
+  // autoDownload は既定 true のまま（裏で自動ダウンロード）。
+  autoUpdater.checkForUpdates().catch(error => {
+    console.error('[tm-viewer] checkForUpdates failed:', error?.message || error);
+  });
+}
+
+ipcMain.handle('update:install', () => {
+  autoUpdater.quitAndInstall();
+  return true;
+});
+
 app.whenReady().then(() => {
   buildAppMenu();
   feedFetcher = createFeedServices();
   createWindow();
+  setupAutoUpdater();
 });
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

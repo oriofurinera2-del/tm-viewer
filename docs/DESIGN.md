@@ -32,7 +32,8 @@ TOKYO Motion を PC で快適に見るための専用ブラウザ（Windows デ�
 ## 2. 利用者と配布
 
 - 本人＋知り合い。Windows PC。
-- 配布: GitHub（個人用の別アカウント・公開リポジトリ）の Releases に **ポータブル exe（zip）** を置く。テスト版は公開コードのタグから GitHub Actions でビルドし、テスト成功後に ZIP とビルド証明を公開する（2026-09-29 ユーザー決定）。手元で作ったファイルを配布版として使わない。
+- 配布: GitHub（個人用の別アカウント・公開リポジトリ）の Releases に **NSIS インストーラ（setup.exe）** を置く（2026-09-29 ユーザー決定でポータブル exe から変更）。インストーラはユーザー単位（管理者権限不要）・ショートカット＋アンインストーラ付き。公開コードのタグ（`v<バージョン>`）から GitHub Actions（electron-builder の publish）でビルドし、インストーラと `latest.yml` を Release に自動アップロードする。手元で作ったファイルを配布版として使わない。
+- 更新: **electron-updater による自動更新**（起動時に GitHub Releases を確認 → 裏でダウンロード → アプリ内の「再起動して更新」バナーで適用）。未署名のため、初回インストール時も自動更新の適用時も SmartScreen 警告が出うる。自動更新が新版を検知するには、リリースが package.json の version と一致する semver タグの通常リリース（prerelease でない）である必要がある。
 - Android 版の配布: Google Play は使わず、GitHub Releases に APK を置く。利用者自身が端末の「不明なアプリのインストール」を、その APK を開くブラウザまたはファイル管理アプリにだけ許可して入れる（2026-09-29 ユーザー決定）。
 - 未署名のため初回起動で SmartScreen 警告が出る。README に「詳細情報 → 実行」の手順を書く。
 - README・スクショにサムネイル等の成人向け画像を載せない。
@@ -47,7 +48,7 @@ TOKYO Motion を PC で快適に見るための専用ブラウザ（Windows デ�
 | 画面 | 素の HTML/CSS/JS（フレームワークなし） | 小規模で保守しやすい |
 | HTML 解析 | main プロセスで cheerio | サイトに API が無いため HTML を読む |
 | 保存 | userData フォルダに JSON | DB 不要な規模 |
-| ビルド | electron-builder（portable） | exe 1 つで配れる |
+| ビルド | electron-builder（NSIS インストーラ）＋ electron-updater 自動更新 | インストールして使い、更新も自動 |
 
 ### プロセス構成
 
@@ -261,8 +262,8 @@ allowlist.json    ["tokyomotion.net", "*.tokyomotion.net", ...]（DESIGN 4.5 の
 
 | 版 | 内容 |
 |---|---|
-| v0.1 | ログイン / 新着フィード / 見られる動画だけ / 視聴済み / 広告遮断 / 独自の名前・タグ・得点（4.8）/ ログイン情報の保存（任意、4.1）/ ダウンロード（4.9）/ アプリ内の検索（4.10）/ portable exe |
-| v0.2 | NG（ユーザー・単語）/ 並べ替え・絞り込み（長さ等）/ キーボード操作 / 更新通知（GitHub Releases） |
+| v0.1 | ログイン / 新着フィード / 見られる動画だけ / 視聴済み / 広告遮断 / 独自の名前・タグ・得点（4.8）/ ログイン情報の保存（任意、4.1）/ ダウンロード（4.9）/ アプリ内の検索（4.10）/ NSIS インストーラ / 自動更新（electron-updater） |
+| v0.2 | NG（ユーザー・単語）/ 並べ替え・絞り込み（長さ等）/ キーボード操作 |
 | 次版以降 | Android 版（スマホ向け UI を含む。iPhone 版は Android 版の設計・実装後に判断） |
 | 未定 | あとで見る / ホバープレビュー |
 

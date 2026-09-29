@@ -42,6 +42,32 @@ nav button.active {
   border-bottom-color: #4f8cff;
 }
 nav .tab-icon { font-size: 14px; line-height: 1; }
+/* 自動更新のバナー（既定は hidden）。上部タブや操作バーの上に控えめに重ねる。 */
+#update-banner {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: #242833;
+  border: 1px solid #4f8cff;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .4);
+}
+#update-banner button {
+  height: 26px;
+  border: 1px solid #2e3340;
+  border-radius: 4px;
+  background: #1d2027;
+  padding: 0 10px;
+}
+#update-banner #update-install { border-color: #4f8cff; background: rgba(79, 140, 255, .16); }
+#update-banner #update-dismiss { padding: 0 8px; color: #8b92a3; }
+
 main { min-height: 0; flex: 1; }
 section { height: 100%; }
 #site { display: flex; flex-direction: column; }

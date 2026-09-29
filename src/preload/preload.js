@@ -85,6 +85,16 @@ contextBridge.exposeInMainWorld('tmViewer', {
       return () => ipcRenderer.removeListener('credentials:auto-login-failed', listener);
     }
   },
+  update: {
+    // 更新のダウンロード完了通知を購読する（バナー表示に使う）。
+    onReady: callback => {
+      const listener = (_event, info) => callback(info);
+      ipcRenderer.on('update:ready', listener);
+      return () => ipcRenderer.removeListener('update:ready', listener);
+    },
+    // 「再起動して更新」。quitAndInstall を呼ぶ。
+    install: () => ipcRenderer.invoke('update:install')
+  },
   download: {
     add: (id, meta) => ipcRenderer.invoke('download:add', id, meta),
     current: () => ipcRenderer.invoke('download:current'),

@@ -5,6 +5,7 @@ const feed = window.tmViewer.feed;
 const notes = window.tmViewer.notes;
 const download = window.tmViewer.download;
 const credentials = window.tmViewer.credentials;
+const update = window.tmViewer.update;
 const $ = id => document.getElementById(id);
 const state = { selectedUser: null, page: 1, viewableOnly: true, includeSubscriptions: true, search: '', requestId: 0 };
 const back = $('back');
@@ -552,6 +553,15 @@ credentials.onAutoLoginFailed(() => {
   $('feed-progress').textContent = message;
   $('credentials-status').textContent = message;
 });
+
+// 自動更新: ダウンロード完了の通知が来たらバナーを出す。押されたら再起動して更新する。
+update.onReady(info => {
+  const version = info?.version ? `（${info.version}）` : '';
+  $('update-banner-text').textContent = `新しいバージョン${version}を準備しました`;
+  $('update-banner').hidden = false;
+});
+$('update-install').onclick = () => void update.install();
+$('update-dismiss').onclick = () => { $('update-banner').hidden = true; };
 
 // ---- サイト表示: 動画ページを開いているときだけ、上部バーの下に名前・タグ・得点の入力欄を出す（4.8） ----
 function extractVideoId(url) {

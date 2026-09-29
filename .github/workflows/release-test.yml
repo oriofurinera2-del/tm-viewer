@@ -1,9 +1,16 @@
 name: Build test release
 
+# 注意（自動更新の前提）: electron-updater はバージョン比較で更新を検知する。
+# 自動更新を正しく通すには、リリースは package.json の version と一致する semver タグ
+# （例 v0.1.0）で、prerelease ではなく通常リリースにするのが基本。
+# 下のトリガ 'v*-test.*' は動作確認用の prerelease タグで、バージョン不一致＆prerelease の
+# ため自動更新は検知しないことがある（あくまでビルド確認用）。実際の自動更新を伴う配布は、
+# package.json の version に合わせた v<version> の通常リリースで行うこと。
 on:
   push:
     tags:
       - 'v*-test.*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
   contents: write
@@ -31,30 +38,16 @@ jobs:
           npm run check
           npm test
 
-      - name: Build portable executable
-        run: npm run dist
-
-      - name: Package executable
-        shell: pwsh
-        run: |
-          $appName = (Get-Content 'package.json' -Raw | ConvertFrom-Json).build.productName
-          $exePath = "dist/$appName.exe"
-          $zipPath = "dist/tm-viewer-$env:GITHUB_REF_NAME.zip"
-          if (-not (Test-Path -LiteralPath $exePath)) { throw "Built executable not found: $exePath" }
-          Compress-Archive -LiteralPath $exePath -DestinationPath $zipPath
-
-      - name: Attest the downloadable ZIP
-        uses: actions/attest@v4
-        with:
-          subject-path: dist/*.zip
-
-      - name: Publish test release
-        shell: pwsh
+      # electron-builder が NSIS インストーラ・latest.yml・blockmap を生成し、
+      # GitHub Release に自動アップロードする（--publish always）。
+      # electron-updater が更新確認に読むのは latest.yml。
+      - name: Build and publish NSIS installer
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          $appName = (Get-Content 'package.json' -Raw | ConvertFrom-Json).build.productName
-          $zipPath = "dist/tm-viewer-$env:GITHUB_REF_NAME.zip"
-          $runUrl = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
-          $notes = "Windows x64 向けのテスト版です。ZIPを展開し、exeを起動してください。公開コードからGitHub上でビルドしています。ビルド記録: $runUrl 配布ZIPのビルド証明も記録しています。アプリ内検索は開発中で、実サイトでの通し確認はこれからです。未署名のためWindowsの警告が出る場合があります。"
-          gh release create "$env:GITHUB_REF_NAME" "$zipPath" --repo "$env:GITHUB_REPOSITORY" --verify-tag --prerelease --title "$appName $env:GITHUB_REF_NAME テスト版" --notes "$notes"
+        run: npx electron-builder --win --x64 --publish always
+
+      # 生成された NSIS インストーラ（.exe）にビルド証明を付ける。
+      - name: Attest the installer
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/*.exe
