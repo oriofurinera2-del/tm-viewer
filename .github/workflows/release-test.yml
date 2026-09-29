@@ -38,15 +38,24 @@ jobs:
           npm run check
           npm test
 
-      # electron-builder が NSIS インストーラ・latest.yml・blockmap を生成し、
-      # GitHub Release に自動アップロードする（--publish always）。
-      # electron-updater が更新確認に読むのは latest.yml。
-      - name: Build and publish NSIS installer
+      # electron-builder はビルドのみ（--publish はしない）。
+      # electron-builder の publish は稀に同じタグで重複リリースを作り、latest.yml の
+      # 無い方が「Latest」になって自動更新が壊れる。確実な単一リリースにするため、
+      # 生成物（インストーラ・latest.yml・blockmap）を gh で 1 つのリリースにまとめて出す。
+      - name: Build NSIS installer
+        run: npx electron-builder --win --x64
+
+      - name: Publish single release with all assets
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: npx electron-builder --win --x64 --publish always
+        run: |
+          $files = Get-ChildItem 'dist/*.exe', 'dist/*.blockmap', 'dist/latest.yml' | ForEach-Object { $_.FullName }
+          if (-not ($files | Where-Object { $_ -like '*latest.yml' })) { throw 'latest.yml が生成されていません' }
+          $notes = "Windows x64 向け。setup の .exe を実行してインストールしてください。未署名のため SmartScreen 警告が出たら「詳細情報 → 実行」。以降はアプリ内の自動更新で更新されます。"
+          gh release create "$env:GITHUB_REF_NAME" $files --repo "$env:GITHUB_REPOSITORY" --title "$env:GITHUB_REF_NAME" --notes "$notes" --latest
 
-      # 生成された NSIS インストーラ（.exe）にビルド証明を付ける。
+      # 公開したインストーラ（.exe）にビルド証明を付ける。
       - name: Attest the installer
         uses: actions/attest@v4
         with:
