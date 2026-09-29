@@ -184,9 +184,10 @@ section { height: 100%; }
 .card-edit .chip button:hover { color: #e4e6eb; }
 
 /* サイト表示: 動画ページを開いているときの入力バー（4.8） */
-.metabar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; padding: 7px 12px; flex: none; background: #20242d; border-bottom: 1px solid #2e3340; }
+.metabar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; padding: 8px 12px; flex: none; background: #232a36; border-left: 3px solid #4a90d9; border-bottom: 1px solid #2e3340; }
+.metabar-head { color: #cfe0f5; font-size: 13px; font-weight: 600; }
 .metabar .field { display: flex; align-items: center; gap: 6px; }
-.metabar .lbl { color: #8b92a3; font-size: 12px; }
+.metabar .lbl { color: #aeb6c5; font-size: 12px; }
 .metabar .name-in { width: 220px; }
 .metabar .tag-in { width: 140px; }
 .metabar input { padding: 5px 8px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; font: inherit; }

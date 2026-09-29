@@ -625,7 +625,9 @@ async function renderSiteMetabar(id) {
   drawStars();
   scoreField.append(Object.assign(document.createElement('span'), { className: 'lbl', textContent: '得点' }), starsBox);
 
-  bar.append(nameField, tagField, scoreField);
+  // 「これはこの動画への自分用メモ編集だ」と分かるように見出しを先頭に付ける。
+  const head = document.createElement('span'); head.className = 'metabar-head'; head.textContent = '✎ この動画にメモ';
+  bar.append(head, nameField, tagField, scoreField);
 }
 
 document.querySelectorAll('[data-view]').forEach(x => { x.onclick = () => setView(x.dataset.view); });
