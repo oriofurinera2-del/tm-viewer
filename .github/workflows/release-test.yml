@@ -42,8 +42,10 @@ jobs:
       # electron-builder の publish は稀に同じタグで重複リリースを作り、latest.yml の
       # 無い方が「Latest」になって自動更新が壊れる。確実な単一リリースにするため、
       # 生成物（インストーラ・latest.yml・blockmap）を gh で 1 つのリリースにまとめて出す。
+      # --publish never が必須。publish 設定があると CI のタグビルドで electron-builder が
+      # 自動 publish を試み、GH_TOKEN 要求＆重複リリースの原因になる。ここはビルドのみ。
       - name: Build NSIS installer
-        run: npx electron-builder --win --x64
+        run: npx electron-builder --win --x64 --publish never
 
       - name: Publish single release with all assets
         shell: pwsh
