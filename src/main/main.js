@@ -345,9 +345,55 @@ function buildAppMenu() {
         { role: 'minimize', label: '最小化' },
         { role: 'close', label: '閉じる' }
       ]
+    },
+    {
+      label: 'ヘルプ',
+      submenu: [
+        { label: '使い方', click: showUsageDialog },
+        { label: '最新情報（リリースページ）', click: () => void shell.openExternal(RELEASES_URL) },
+        { type: 'separator' },
+        { label: 'バージョン情報', click: showAboutDialog }
+      ]
     }
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+const RELEASES_URL = 'https://github.com/oriofurinera2-del/tm-viewer/releases';
+
+// ヘルプ→バージョン情報。今インストールされているアプリの版を表示する。
+function showAboutDialog() {
+  dialog.showMessageBox(mainWindow ?? undefined, {
+    type: 'info',
+    title: 'バージョン情報',
+    message: 'しこしこフレンズ探検隊',
+    detail: `バージョン ${app.getVersion()}\n\n更新は「ヘルプ→最新情報」から確認できます。新しい版が出ると、起動時に「再起動して更新」の案内が出ます。`,
+    buttons: ['OK'],
+    noLink: true
+  });
+}
+
+// ヘルプ→使い方。主な機能の短い説明。
+function showUsageDialog() {
+  const detail = [
+    '■ サイト表示：ログインして動画を見る画面。広告や別サイトへの移動は止めます。',
+    '■ フィード：フレンド・購読ユーザーの新着をまとめて表示。「更新」で取得します。',
+    '■ 検索：サイト内検索が使いにくいとき、Google 経由で動画を探してカードにします。',
+    '　（Google が拾える公開ページだけなので、PRIVATE 動画は基本出ません）',
+    '■ 整理した動画：★・独自の名前・タグを付けた動画だけを一覧できます。',
+    '■ ダウンロード：自分で再生できる動画を保存します。',
+    '',
+    'カードの操作：クリックで動画を開く／★で得点／✎で名前・タグ編集／「保存」でダウンロード。',
+    'カードにカーソルを当てると、サムネ・投稿者・タグを読み込みます。'
+  ].join('\n');
+  dialog.showMessageBox(mainWindow ?? undefined, {
+    type: 'info',
+    title: '使い方',
+    message: '使い方',
+    detail,
+    buttons: ['OK'],
+    noLink: true
+  });
 }
 
 function createWindow() {
