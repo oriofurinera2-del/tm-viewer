@@ -40,7 +40,8 @@
     "publish": {
       "provider": "github",
       "owner": "oriofurinera2-del",
-      "repo": "tm-viewer"
+      "repo": "tm-viewer",
+      "releaseType": "release"
     }
   }
 }
