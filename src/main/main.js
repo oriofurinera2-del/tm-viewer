@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, net, session, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, clipboard, dialog, ipcMain, net, session, shell, safeStorage } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { buildGoogleSearchUrl, configureSession, enableVideoTagDebug, getHostname, isGoogleHost, isGoogleSearchPageUrl, isSiteUrl } = require('./session');
 const { createFetcher } = require('./fetcher');
@@ -160,6 +160,7 @@ function createSiteView() {
   });
 
   siteView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  attachContextMenu(siteView.webContents, { navigation: true });
   // サイト本体以外への移動は止める（Google 検索は検索タブの googleView で扱う）。
   siteView.webContents.on('will-navigate', (event, url) => {
     if (!isSiteUrl(url)) event.preventDefault();
@@ -242,6 +243,7 @@ function createGoogleView() {
     }
   });
   googleView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  attachContextMenu(googleView.webContents, { navigation: true });
   googleView.webContents.on('will-navigate', (event, url) => {
     if (!isGoogleHost(getHostname(url))) event.preventDefault();
   });
@@ -308,6 +310,45 @@ async function attemptAutoLogin() {
   } finally {
     autoLoginBusy = false;
   }
+}
+
+// 右クリック（コンテキストメニュー）。ブラウザとして最低限のコピー・貼り付け・
+// リンクのコピー等を出す。navigation:true のビュー（サイト表示・Google）には戻る/進む/再読込も。
+function attachContextMenu(contents, { navigation = false } = {}) {
+  contents.on('context-menu', (_event, params) => {
+    const items = [];
+    if (params.linkURL) {
+      items.push({ label: 'リンクをコピー', click: () => clipboard.writeText(params.linkURL) });
+    }
+    if (params.mediaType === 'image' && params.srcURL) {
+      items.push({ label: '画像のアドレスをコピー', click: () => clipboard.writeText(params.srcURL) });
+    }
+    if (params.isEditable) {
+      if (items.length) items.push({ type: 'separator' });
+      items.push(
+        { role: 'cut', label: '切り取り', enabled: params.editFlags.canCut },
+        { role: 'copy', label: 'コピー', enabled: params.editFlags.canCopy },
+        { role: 'paste', label: '貼り付け', enabled: params.editFlags.canPaste },
+        { role: 'selectAll', label: 'すべて選択' }
+      );
+    } else if (params.selectionText) {
+      if (items.length) items.push({ type: 'separator' });
+      items.push(
+        { role: 'copy', label: 'コピー' },
+        { role: 'selectAll', label: 'すべて選択' }
+      );
+    }
+    if (navigation) {
+      if (items.length) items.push({ type: 'separator' });
+      const nav = contents.navigationHistory;
+      items.push(
+        { label: '戻る', enabled: nav.canGoBack(), click: () => nav.goBack() },
+        { label: '進む', enabled: nav.canGoForward(), click: () => nav.goForward() },
+        { label: '再読み込み', click: () => contents.reload() }
+      );
+    }
+    if (items.length) Menu.buildFromTemplate(items).popup();
+  });
 }
 
 // ウィンドウ上部のメニューを日本語の最小メニューに置き換える（5 章、2026-09-29）。
@@ -413,6 +454,7 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  attachContextMenu(mainWindow.webContents);
   mainWindow.webContents.on('will-navigate', event => event.preventDefault());
   mainWindow.on('closed', () => {
     mainWindow = undefined;
