@@ -38,12 +38,27 @@ const DEBUG_HOSTS = !app.isPackaged && process.argv.includes('--debug-hosts');
 const SITE_VIEW_TOP = 88;
 
 let mainWindow;
-let siteView;
+// サイト表示はマルチタブ。各タブは独立した WebContentsView（同じ session persist:tm）。
+// 画面に付けるのはアクティブなタブの view だけ（attachedSiteView）。
+let siteTabs = [];        // [{ id, view, title, url }]
+let activeSiteTabId = null;
+let nextSiteTabId = 1;
+let siteShown = false;         // サイト表示セクションを表示中か
+let attachedSiteView = null;   // 今 contentView に付けているタブの view
+// renderer から届いた #site-area の矩形。タブ切替・表示時にこの位置へ合わせる。
+let siteViewBounds = { x: 0, y: SITE_VIEW_TOP, width: 0, height: 0 };
 let googleView;
 let downloadView;
-let siteAttached = false;
 let googleAttached = false;
 let siteSession;
+
+function activeSiteTab() {
+  return siteTabs.find(tab => tab.id === activeSiteTabId) || null;
+}
+function activeSiteView() {
+  const tab = activeSiteTab();
+  return tab ? tab.view : null;
+}
 let feedService;
 let appStore;
 let downloadQueue;
@@ -115,9 +130,15 @@ async function persistSiteSessionCookies() {
 
 let feedFetcher;
 
+// main から renderer への一方向通知（存在確認つき）。
+function sendToRenderer(channel, ...args) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args);
+}
+
 function sendSiteState() {
-  if (!mainWindow || mainWindow.isDestroyed() || !siteView) return;
-  const contents = siteView.webContents;
+  const view = activeSiteView();
+  if (!mainWindow || mainWindow.isDestroyed() || !view) return;
+  const contents = view.webContents;
   mainWindow.webContents.send('site:state', {
     url: contents.getURL(),
     canGoBack: contents.navigationHistory.canGoBack(),
@@ -125,32 +146,73 @@ function sendSiteState() {
   });
 }
 
-function resizeSiteView(bounds) {
-  if (!mainWindow || !siteView || !siteAttached) return;
-  const width = Math.max(0, Math.floor(Number(bounds?.width) || 0));
-  const height = Math.max(0, Math.floor(Number(bounds?.height) || 0));
-  siteView.setBounds({ x: 0, y: SITE_VIEW_TOP, width, height });
+// タブ一覧（renderer のタブバー用）。
+function tabsList() {
+  return siteTabs.map(tab => ({
+    id: tab.id,
+    title: tab.title || '',
+    url: tab.url || '',
+    active: tab.id === activeSiteTabId
+  }));
+}
+function sendTabsChanged() {
+  sendToRenderer('tabs:changed', tabsList());
 }
 
-function showSiteView() {
-  if (!mainWindow || !siteView) return;
-  if (!siteAttached) {
-    mainWindow.contentView.addChildView(siteView);
-    siteAttached = true;
+function resizeSiteView(bounds) {
+  if (bounds) {
+    siteViewBounds = {
+      x: Math.max(0, Math.floor(Number(bounds.x) || 0)),
+      // y が届かない古い呼び出しはタブ・操作バーの下（SITE_VIEW_TOP）にする。
+      y: Math.max(0, Math.floor(Number(bounds.y) || SITE_VIEW_TOP)),
+      width: Math.max(0, Math.floor(Number(bounds.width) || 0)),
+      height: Math.max(0, Math.floor(Number(bounds.height) || 0))
+    };
   }
-  const [width, height] = mainWindow.getContentSize();
-  resizeSiteView({ width, height: height - SITE_VIEW_TOP });
+  if (mainWindow && attachedSiteView && siteShown) attachedSiteView.setBounds(siteViewBounds);
+}
+
+// アクティブなタブの view だけを画面に付ける（前のタブの view は外す）。
+function attachActiveSiteView() {
+  if (!mainWindow || !siteShown) return;
+  const view = activeSiteView();
+  if (!view) return;
+  if (attachedSiteView && attachedSiteView !== view) {
+    mainWindow.contentView.removeChildView(attachedSiteView);
+  }
+  mainWindow.contentView.addChildView(view);
+  attachedSiteView = view;
+  // renderer からまだ矩形が届いていない起動直後は、ウィンドウ全体から概算する。
+  if (!siteViewBounds.width || !siteViewBounds.height) {
+    const [width, height] = mainWindow.getContentSize();
+    siteViewBounds = { x: 0, y: SITE_VIEW_TOP, width, height: height - SITE_VIEW_TOP };
+  }
+  view.setBounds(siteViewBounds);
   sendSiteState();
 }
 
-function hideSiteView() {
-  if (!mainWindow || !siteView || !siteAttached) return;
-  mainWindow.contentView.removeChildView(siteView);
-  siteAttached = false;
+function showSiteView() {
+  if (!mainWindow) return;
+  siteShown = true;
+  attachActiveSiteView();
 }
 
-function createSiteView() {
-  siteView = new WebContentsView({
+function hideSiteView() {
+  siteShown = false;
+  if (mainWindow && attachedSiteView) mainWindow.contentView.removeChildView(attachedSiteView);
+  attachedSiteView = null;
+}
+
+// WebContentsView の後始末（タブを閉じたとき）。
+function destroySiteView(view) {
+  try { view.webContents.close(); } catch { /* すでに閉じている等は無視 */ }
+}
+
+// サイト表示のタブを 1 枚作る。単一 siteView と同じ生成処理を各タブに適用する。
+function createSiteTab(url = START_URL, { activate = true } = {}) {
+  const id = nextSiteTabId;
+  nextSiteTabId += 1;
+  const view = new WebContentsView({
     webPreferences: {
       session: siteSession,
       contextIsolation: true,
@@ -158,24 +220,98 @@ function createSiteView() {
       sandbox: true
     }
   });
+  const tab = { id, view, title: '', url: '' };
+  siteTabs.push(tab);
+  const contents = view.webContents;
 
-  siteView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  attachContextMenu(siteView.webContents, { navigation: true });
+  // リンクを新しいタブで開く（サイトURLのみ）。外部URLは従来どおり開かない。
+  contents.setWindowOpenHandler(({ url: target }) => {
+    if (isSiteUrl(target)) createSiteTab(target);
+    return { action: 'deny' };
+  });
+  attachContextMenu(contents, { navigation: true, siteTab: true });
   // サイト本体以外への移動は止める（Google 検索は検索タブの googleView で扱う）。
-  siteView.webContents.on('will-navigate', (event, url) => {
-    if (!isSiteUrl(url)) event.preventDefault();
+  contents.on('will-navigate', (event, u) => {
+    if (!isSiteUrl(u)) event.preventDefault();
   });
-  siteView.webContents.on('will-redirect', (event, url) => {
-    if (!isSiteUrl(url)) event.preventDefault();
+  contents.on('will-redirect', (event, u) => {
+    if (!isSiteUrl(u)) event.preventDefault();
   });
-  siteView.webContents.on('did-navigate', () => {
-    sendSiteState();
+  contents.on('did-navigate', () => {
+    tab.url = contents.getURL();
+    tab.title = contents.getTitle();
+    if (tab.id === activeSiteTabId) sendSiteState();
     // ログアウトされてログイン画面になったときの自動ログイン（DESIGN 4.1）。
-    if (credentials.isLoginUrl(siteView.webContents.getURL())) void attemptAutoLogin();
+    if (credentials.isLoginUrl(contents.getURL())) void attemptAutoLogin(view);
+    sendTabsChanged();
   });
-  siteView.webContents.on('did-navigate-in-page', sendSiteState);
-  if (DEBUG_HOSTS) enableVideoTagDebug(siteView.webContents);
-  siteView.webContents.loadURL(START_URL);
+  contents.on('did-navigate-in-page', () => {
+    tab.url = contents.getURL();
+    if (tab.id === activeSiteTabId) sendSiteState();
+    sendTabsChanged();
+  });
+  contents.on('page-title-updated', (_event, title) => {
+    tab.title = title;
+    sendTabsChanged();
+  });
+  // ページ内検索（Ctrl+F）の結果は、アクティブなタブのものだけ renderer に渡す。
+  contents.on('found-in-page', (_event, result) => {
+    if (tab.id === activeSiteTabId) {
+      sendToRenderer('find:result', { activeMatchOrdinal: result.activeMatchOrdinal, matches: result.matches });
+    }
+  });
+  // ショートカット（サイト表示に focus があるとき）。
+  contents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const ctrl = input.control || input.meta;
+    const key = (input.key || '').toLowerCase();
+    if (ctrl && key === 't') { event.preventDefault(); createSiteTab(); }
+    else if (ctrl && key === 'w') { event.preventDefault(); closeSiteTab(tab.id); }
+    else if (ctrl && key === 'r') { event.preventDefault(); contents.reload(); }
+    else if (ctrl && key === 'l') { event.preventDefault(); sendToRenderer('site:shortcut', 'focus-address'); }
+    else if (ctrl && key === 'f') { event.preventDefault(); sendToRenderer('site:shortcut', 'find'); }
+    else if (input.alt && input.key === 'ArrowLeft') { event.preventDefault(); if (contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack(); }
+    else if (input.alt && input.key === 'ArrowRight') { event.preventDefault(); if (contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward(); }
+  });
+  if (DEBUG_HOSTS) enableVideoTagDebug(contents);
+  contents.loadURL(url);
+
+  if (activate) setActiveSiteTab(id);
+  else sendTabsChanged();
+  return tab;
+}
+
+function setActiveSiteTab(id) {
+  const tab = siteTabs.find(t => t.id === id);
+  if (!tab) return;
+  activeSiteTabId = id;
+  if (siteShown) attachActiveSiteView();
+  else sendSiteState();
+  sendTabsChanged();
+}
+
+function closeSiteTab(id) {
+  const index = siteTabs.findIndex(t => t.id === id);
+  if (index === -1) return;
+  // 最後の 1 枚は閉じず、トップ（START_URL）へ戻す（最低 1 枚を維持）。
+  if (siteTabs.length === 1) {
+    siteTabs[0].view.webContents.loadURL(START_URL);
+    return;
+  }
+  const tab = siteTabs[index];
+  siteTabs.splice(index, 1);
+  const wasActive = activeSiteTabId === id;
+  if (attachedSiteView === tab.view) {
+    if (mainWindow) mainWindow.contentView.removeChildView(tab.view);
+    attachedSiteView = null;
+  }
+  destroySiteView(tab.view);
+  if (wasActive) {
+    const next = siteTabs[Math.min(index, siteTabs.length - 1)];
+    setActiveSiteTab(next.id);
+  } else {
+    sendTabsChanged();
+  }
 }
 
 // ダウンロードの動画 URL 確認専用の裏ページ（DESIGN 4.9）。画面には一切出さない。
@@ -282,13 +418,13 @@ function waitForSiteLoad(contents, timeoutMs = PAGE_LOAD_TIMEOUT_MS) {
 // ログアウトされていたとき、保存したログイン情報でサイトのログイン画面に入力して送信する（DESIGN 4.1）。
 // 失敗（送信後もログイン画面のまま）は 1 回で止め、次にログインが成功するまで再試行しない
 // （連続失敗でアカウントが制限されるのを防ぐ）。id・password はこの関数のスコープの外に出さない。
-async function attemptAutoLogin() {
-  if (!siteView || autoLoginBusy || autoLoginBlocked) return false;
+async function attemptAutoLogin(view = activeSiteView()) {
+  if (!view || autoLoginBusy || autoLoginBlocked) return false;
   const saved = credentials.load(app.getPath('userData'), safeStorage);
   if (!saved) return false;
   autoLoginBusy = true;
   try {
-    const contents = siteView.webContents;
+    const contents = view.webContents;
     if (!credentials.isLoginUrl(contents.getURL())) {
       await contents.loadURL(LOGIN_URL).catch(() => {});
     }
@@ -314,13 +450,20 @@ async function attemptAutoLogin() {
 
 // 右クリック（コンテキストメニュー）。ブラウザとして最低限のコピー・貼り付け・
 // リンクのコピー等を出す。navigation:true のビュー（サイト表示・Google）には戻る/進む/再読込も。
-function attachContextMenu(contents, { navigation = false } = {}) {
+function attachContextMenu(contents, { navigation = false, siteTab = false } = {}) {
   contents.on('context-menu', (_event, params) => {
     const items = [];
     if (params.linkURL) {
+      // サイト表示では、リンクを新しいタブで開ける（サイトURLのみ）。
+      if (siteTab && isSiteUrl(params.linkURL)) {
+        items.push({ label: 'リンクを新しいタブで開く', click: () => createSiteTab(params.linkURL) });
+      }
       items.push({ label: 'リンクをコピー', click: () => clipboard.writeText(params.linkURL) });
     }
     if (params.mediaType === 'image' && params.srcURL) {
+      if (siteTab && isSiteUrl(params.srcURL)) {
+        items.push({ label: '画像を新しいタブで開く', click: () => createSiteTab(params.srcURL) });
+      }
       items.push({ label: '画像のアドレスをコピー', click: () => clipboard.writeText(params.srcURL) });
     }
     if (params.isEditable) {
@@ -391,6 +534,8 @@ function buildAppMenu() {
       label: 'ヘルプ',
       submenu: [
         { label: '使い方', click: showUsageDialog },
+        { label: '更新履歴', click: showChangelogDialog },
+        { label: '要望・不具合を送る', click: () => void shell.openExternal(FEEDBACK_FORM_URL) },
         { label: '最新情報（リリースページ）', click: () => void shell.openExternal(RELEASES_URL) },
         { type: 'separator' },
         { label: 'バージョン情報', click: showAboutDialog }
@@ -401,6 +546,7 @@ function buildAppMenu() {
 }
 
 const RELEASES_URL = 'https://github.com/oriofurinera2-del/tm-viewer/releases';
+const FEEDBACK_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLScc-X5Gw0Ftn9go0liBUbFQnCRov0pYYroTMSIXAYVlgj0iFw/viewform';
 
 // ヘルプ→バージョン情報。今インストールされているアプリの版を表示する。
 function showAboutDialog() {
@@ -409,6 +555,24 @@ function showAboutDialog() {
     title: 'バージョン情報',
     message: 'しこしこフレンズ探検隊',
     detail: `バージョン ${app.getVersion()}\n\n更新は「ヘルプ→最新情報」から確認できます。新しい版が出ると、起動時に「再起動して更新」の案内が出ます。`,
+    buttons: ['OK'],
+    noLink: true
+  });
+}
+
+// ヘルプ→更新履歴。同梱の CHANGELOG.md を読んでそのまま表示する（書く場所はこのファイル1つ）。
+function showChangelogDialog() {
+  let text = '';
+  try {
+    text = fs.readFileSync(path.join(app.getAppPath(), 'CHANGELOG.md'), 'utf8').replace(/^# .*\n+/, '');
+  } catch {
+    text = '更新履歴を読み込めませんでした。';
+  }
+  dialog.showMessageBox(mainWindow ?? undefined, {
+    type: 'info',
+    title: '更新履歴',
+    message: '更新履歴',
+    detail: text,
     buttons: ['OK'],
     noLink: true
   });
@@ -458,11 +622,12 @@ function createWindow() {
   mainWindow.webContents.on('will-navigate', event => event.preventDefault());
   mainWindow.on('closed', () => {
     mainWindow = undefined;
-    siteAttached = false;
+    siteShown = false;
+    attachedSiteView = null;
     googleAttached = false;
   });
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
-  createSiteView();
+  createSiteTab(START_URL);
   createGoogleView();
   createDownloadView();
   showSiteView();
@@ -604,7 +769,8 @@ async function saveVideo(job, found, onProgress) {
 
 // 動画ページのタイトル。サイト表示で今その動画を開いているときだけ webContents から読む。
 function currentPageTitle(id) {
-  return siteView && videoIdFromUrl(siteView.webContents.getURL()) === id ? siteView.webContents.getTitle() : '';
+  const view = activeSiteView();
+  return view && videoIdFromUrl(view.webContents.getURL()) === id ? view.webContents.getTitle() : '';
 }
 
 // 独自の名前・タグ・得点（DESIGN 4.8）と、無いときの元のタイトル・投稿者・サムネ。
@@ -636,7 +802,8 @@ downloadQueue = createDownloadQueue({ resolveUrl: resolveVideoUrl, save: saveVid
 
 ipcMain.handle('download:add', (_event, id, meta) => addDownload(Number(id), meta));
 ipcMain.handle('download:current', () => {
-  const id = siteView ? videoIdFromUrl(siteView.webContents.getURL()) : null;
+  const view = activeSiteView();
+  const id = view ? videoIdFromUrl(view.webContents.getURL()) : null;
   return id ? addDownload(id) : { ok: false, message: '動画ページを開いてください' };
 });
 ipcMain.handle('download:cancel', (_event, id) => downloadQueue.cancel(Number(id)));
@@ -693,18 +860,46 @@ ipcMain.handle('credentials:clear', () => {
 });
 
 ipcMain.handle('site:command', (_event, command, value) => {
-  if (!siteView) return false;
-  if (command === 'back' && siteView.webContents.navigationHistory.canGoBack()) {
-    siteView.webContents.navigationHistory.goBack();
+  const view = activeSiteView();
+  if (!view) return false;
+  const contents = view.webContents;
+  if (command === 'back' && contents.navigationHistory.canGoBack()) {
+    contents.navigationHistory.goBack();
   }
-  if (command === 'forward' && siteView.webContents.navigationHistory.canGoForward()) {
-    siteView.webContents.navigationHistory.goForward();
+  if (command === 'forward' && contents.navigationHistory.canGoForward()) {
+    contents.navigationHistory.goForward();
   }
+  if (command === 'reload') contents.reload();
   if (command === 'navigate' && typeof value === 'string' && isSiteUrl(value)) {
-    siteView.webContents.loadURL(value);
+    contents.loadURL(value);
   }
   if (command === 'show') showSiteView();
   if (command === 'hide') hideSiteView();
+  return true;
+});
+
+// ---- サイト表示のタブ（マルチタブ） ----
+ipcMain.handle('tabs:new', (_event, url) => {
+  const tab = createSiteTab(typeof url === 'string' && isSiteUrl(url) ? url : START_URL);
+  return tab.id;
+});
+ipcMain.handle('tabs:close', (_event, id) => { closeSiteTab(Number(id)); return true; });
+ipcMain.handle('tabs:select', (_event, id) => { setActiveSiteTab(Number(id)); return true; });
+ipcMain.handle('tabs:list', () => tabsList());
+
+// ---- ページ内検索（Ctrl+F）: アクティブなタブに対して行う ----
+ipcMain.handle('find:start', (_event, text, options) => {
+  const view = activeSiteView();
+  if (!view || typeof text !== 'string' || !text) return false;
+  view.webContents.findInPage(text, {
+    forward: options?.forward !== false,
+    findNext: options?.findNext === true
+  });
+  return true;
+});
+ipcMain.handle('find:stop', () => {
+  const view = activeSiteView();
+  if (view) view.webContents.stopFindInPage('clearSelection');
   return true;
 });
 

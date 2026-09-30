@@ -1,6 +1,6 @@
 {
   "name": "tm-viewer",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "TOKYO Motion 用の PC 専用ブラウザ",
   "main": "src/main/main.js",
   "private": true,
@@ -24,7 +24,8 @@
     "files": [
       "package.json",
       "src/**/*",
-      "data/allowlist.json"
+      "data/allowlist.json",
+      "CHANGELOG.md"
     ],
     "win": {
       "target": "nsis",

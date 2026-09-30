@@ -114,7 +114,16 @@
         <span class="download-status" role="status"></span>
         <span>広告遮断中</span>
       </div>
+      <div class="site-tabs" id="site-tabs"></div>
       <div class="metabar" id="site-metabar" hidden></div>
+      <div class="find-bar" id="find-bar" hidden>
+        <label class="visually-hidden" for="find-input">ページ内を検索</label>
+        <input id="find-input" type="search" autocomplete="off" placeholder="ページ内を検索">
+        <span id="find-count" role="status"></span>
+        <button type="button" id="find-prev" title="前へ" aria-label="前へ">▲</button>
+        <button type="button" id="find-next" title="次へ" aria-label="次へ">▼</button>
+        <button type="button" id="find-close" title="閉じる" aria-label="閉じる">×</button>
+      </div>
       <div id="site-area" aria-label="TOKYO Motion のサイト表示"></div>
     </section>
 

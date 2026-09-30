@@ -10,6 +10,34 @@ contextBridge.exposeInMainWorld('tmViewer', {
       const listener = (_event, state) => callback(state);
       ipcRenderer.on('site:state', listener);
       return () => ipcRenderer.removeListener('site:state', listener);
+    },
+    // main からのショートカット通知（サイト表示に focus があるとき）: 'find' / 'focus-address'。
+    onShortcut: callback => {
+      const listener = (_event, name) => callback(name);
+      ipcRenderer.on('site:shortcut', listener);
+      return () => ipcRenderer.removeListener('site:shortcut', listener);
+    }
+  },
+  // サイト表示のタブ（マルチタブ）。
+  tabs: {
+    new: url => ipcRenderer.invoke('tabs:new', url),
+    close: id => ipcRenderer.invoke('tabs:close', id),
+    select: id => ipcRenderer.invoke('tabs:select', id),
+    list: () => ipcRenderer.invoke('tabs:list'),
+    onChanged: callback => {
+      const listener = (_event, tabs) => callback(tabs);
+      ipcRenderer.on('tabs:changed', listener);
+      return () => ipcRenderer.removeListener('tabs:changed', listener);
+    }
+  },
+  // ページ内検索（Ctrl+F）。アクティブなタブに対して行う。
+  find: {
+    start: (text, options) => ipcRenderer.invoke('find:start', text, options),
+    stop: () => ipcRenderer.invoke('find:stop'),
+    onResult: callback => {
+      const listener = (_event, result) => callback(result);
+      ipcRenderer.on('find:result', listener);
+      return () => ipcRenderer.removeListener('find:result', listener);
     }
   },
   google: {

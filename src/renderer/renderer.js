@@ -1,5 +1,7 @@
 'use strict';
 const site = window.tmViewer.site;
+const tabsApi = window.tmViewer.tabs;
+const findApi = window.tmViewer.find;
 const google = window.tmViewer.google;
 const feed = window.tmViewer.feed;
 const notes = window.tmViewer.notes;
@@ -26,7 +28,7 @@ function setView(name) {
   else if (name === 'settings') void drawCredentials();
   applyGoogleView();
 }
-function bounds() { const r = $('site-area').getBoundingClientRect(); site.setBounds({ width: r.width, height: r.height }); }
+function bounds() { const r = $('site-area').getBoundingClientRect(); site.setBounds({ x: r.left, y: r.top, width: r.width, height: r.height }); }
 function pager(id, current, pages, onGo) {
   // 既定（フィード）: ページ移動したら内容の先頭までスクロールを戻す。
   const go = onGo || (page => { state.page = page; void draw(); const c = $('feed-content'); if (c) c.scrollTop = 0; });
@@ -704,6 +706,74 @@ feed.onPersonProgress(progress => {
   const loaded = Number(progress?.loaded); const needed = Number(progress?.needed);
   if (Number.isInteger(loaded) && loaded >= 0 && Number.isInteger(needed) && needed >= 0) $('feed-progress').textContent = `追加取得中 ${Math.min(loaded, needed)}/${needed}`;
 });
+// ---- サイト表示のタブバー（マルチタブ） ----
+let currentTabs = [];
+function renderTabs(tabs) {
+  currentTabs = Array.isArray(tabs) ? tabs : [];
+  const bar = $('site-tabs'); if (!bar) return;
+  bar.textContent = '';
+  currentTabs.forEach(t => {
+    const tabEl = document.createElement('div'); tabEl.className = `site-tab${t.active ? ' active' : ''}`;
+    const label = document.createElement('span'); label.className = 'site-tab-label';
+    label.textContent = t.title || t.url || '読み込み中…'; label.title = label.textContent;
+    label.onclick = () => void tabsApi.select(t.id);
+    const close = document.createElement('button'); close.type = 'button'; close.className = 'site-tab-close';
+    close.textContent = '×'; close.title = 'タブを閉じる'; close.setAttribute('aria-label', 'タブを閉じる');
+    close.onclick = e => { e.stopPropagation(); void tabsApi.close(t.id); };
+    tabEl.append(label, close);
+    bar.append(tabEl);
+  });
+  const add = document.createElement('button'); add.type = 'button'; add.className = 'site-tab-new';
+  add.textContent = '＋'; add.title = '新しいタブ'; add.setAttribute('aria-label', '新しいタブ');
+  add.onclick = () => void tabsApi.new();
+  bar.append(add);
+}
+function closeActiveTab() {
+  const active = currentTabs.find(t => t.active);
+  if (active) void tabsApi.close(active.id);
+}
+tabsApi.onChanged(renderTabs);
+tabsApi.list().then(renderTabs).catch(() => {});
+
+// ---- ページ内検索（Ctrl+F） ----
+const findBar = $('find-bar'); const findInput = $('find-input'); const findCount = $('find-count');
+function doFind(findNext, forward = true) {
+  const text = findInput.value;
+  if (!text) { void findApi.stop(); findCount.textContent = ''; return; }
+  void findApi.start(text, { forward, findNext });
+}
+function openFind() { findBar.hidden = false; findInput.focus(); findInput.select(); bounds(); if (findInput.value) doFind(false); }
+function closeFind() { findBar.hidden = true; findCount.textContent = ''; void findApi.stop(); bounds(); }
+findInput.oninput = () => doFind(false);
+findInput.onkeydown = e => {
+  if (e.key === 'Enter') { e.preventDefault(); doFind(true, !e.shiftKey); }
+  else if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+};
+$('find-next').onclick = () => doFind(true, true);
+$('find-prev').onclick = () => doFind(true, false);
+$('find-close').onclick = () => closeFind();
+findApi.onResult(r => { findCount.textContent = r?.matches ? `${r.activeMatchOrdinal}/${r.matches}` : '0件'; });
+
+// main からのショートカット通知（サイト表示に focus があるとき）。
+site.onShortcut(name => {
+  if ($('site').hidden) return;
+  if (name === 'find') openFind();
+  else if (name === 'focus-address') { $('address').focus(); $('address').select(); }
+});
+// renderer に focus があるとき（アドレス欄・検索バーなど）のショートカット。サイト表示中だけ効かせる。
+document.addEventListener('keydown', e => {
+  if ($('site').hidden) return;
+  const ctrl = e.ctrlKey || e.metaKey;
+  const key = (e.key || '').toLowerCase();
+  if (ctrl && key === 'f') { e.preventDefault(); openFind(); }
+  else if (ctrl && key === 'l') { e.preventDefault(); $('address').focus(); $('address').select(); }
+  else if (ctrl && key === 't') { e.preventDefault(); void tabsApi.new(); }
+  else if (ctrl && key === 'w') { e.preventDefault(); closeActiveTab(); }
+  else if (ctrl && key === 'r') { e.preventDefault(); void site.command('reload'); }
+  else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); void site.command('back'); }
+  else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); void site.command('forward'); }
+});
+
 new ResizeObserver(bounds).observe($('site-area')); bounds();
 new ResizeObserver(() => { if (!$('search').hidden && googleMode === 'browse') sendGoogleBounds(); }).observe($('google-area'));
 // 起動時（DESIGN 4.4）: 保存済みのフィードがあれば先にフィード画面で表示し、裏で 1 回だけ自動更新する。
