@@ -163,6 +163,10 @@ section { height: 100%; }
 .video-card .card-user > span { padding: 0; }
 .video-card .card-user-name { flex: 1; min-width: 0; }
 .video-card .card-posted { flex: none; color: #8b92a3; }
+.video-card .card-watched-at { color: #8b92a3; }
+.card-menu { position: fixed; z-index: 1000; min-width: 150px; padding: 4px; background: #1b2330; border: 1px solid #33405a; border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5); }
+.card-menu-item { display: block; width: 100%; padding: 7px 10px; text-align: left; background: none; border: 0; border-radius: 5px; color: #e6ebf3; font-size: 13px; cursor: pointer; }
+.card-menu-item:hover { background: #2b3648; }
 .avatar { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 26px; height: 26px; overflow: hidden; border-radius: 50%; background: #3a4151; color: #e4e6eb; font-size: 13px; line-height: 1; }
 .video-card .avatar { display: inline-flex; width: 30px; height: 30px; padding: 0; color: #e4e6eb; font-size: 14px; }
 .person-pick .avatar { width: 36px; height: 36px; font-size: 16px; }
@@ -182,6 +186,8 @@ section { height: 100%; }
 #org-tags button.on { background: #4f8cff; border-color: #4f8cff; color: #fff; }
 #org-site-tag { padding: 4px 8px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; }
 #org-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px; min-height: 80px; margin-top: 12px; }
+#history { overflow: auto; padding: 18px; }
+#history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px; min-height: 80px; margin-top: 12px; }
 
 /* 独自の名前・タグ・得点（4.8） */
 .video-card .stars { display: flex; padding: 4px 8px 0; }

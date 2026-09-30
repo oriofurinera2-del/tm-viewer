@@ -10,6 +10,7 @@ const { createStore } = require('./store');
 const { googleVideoUrl, parseGoogleNextPageHref, parseGoogleResultLinks, parseMe, parseUserList, parseVideoList, parseVideoPage, parseVideoTags } = require('./parser');
 const { createFeedService, videoTagRequest } = require('./feed');
 const notes = require('./notes');
+const history = require('./history');
 const credentials = require('./credentials');
 const { persistableCookies } = require('./cookie-persist');
 const {
@@ -47,6 +48,8 @@ let siteShown = false;         // サイト表示セクションを表示中か
 let attachedSiteView = null;   // 今 contentView に付けているタブの view
 // renderer から届いた #site-area の矩形。タブ切替・表示時にこの位置へ合わせる。
 let siteViewBounds = { x: 0, y: SITE_VIEW_TOP, width: 0, height: 0 };
+// 動画の HTML 全画面中は、サイト表示をウィンドウ全体に広げてアプリのバー類を覆う。
+let siteHtmlFullscreen = false;
 let googleView;
 let downloadView;
 let googleAttached = false;
@@ -159,6 +162,15 @@ function sendTabsChanged() {
   sendToRenderer('tabs:changed', tabsList());
 }
 
+// 実際に適用する矩形。動画の全画面中はウィンドウ全体（バー類を覆う）にする。
+function siteBoundsToApply() {
+  if (siteHtmlFullscreen && mainWindow) {
+    const [width, height] = mainWindow.getContentSize();
+    return { x: 0, y: 0, width, height };
+  }
+  return siteViewBounds;
+}
+
 function resizeSiteView(bounds) {
   if (bounds) {
     siteViewBounds = {
@@ -169,7 +181,20 @@ function resizeSiteView(bounds) {
       height: Math.max(0, Math.floor(Number(bounds.height) || 0))
     };
   }
-  if (mainWindow && attachedSiteView && siteShown) attachedSiteView.setBounds(siteViewBounds);
+  if (mainWindow && attachedSiteView && siteShown) attachedSiteView.setBounds(siteBoundsToApply());
+}
+
+// 動画の HTML 全画面の出入り。サイト表示をウィンドウ全体に広げ、ウィンドウも OS 全画面にする。
+function enterSiteFullscreen(tabId) {
+  if (tabId !== activeSiteTabId) return;
+  siteHtmlFullscreen = true;
+  if (mainWindow) { try { mainWindow.setFullScreen(true); } catch { /* 無視 */ } }
+  if (mainWindow && attachedSiteView && siteShown) attachedSiteView.setBounds(siteBoundsToApply());
+}
+function leaveSiteFullscreen() {
+  siteHtmlFullscreen = false;
+  if (mainWindow) { try { mainWindow.setFullScreen(false); } catch { /* 無視 */ } }
+  if (mainWindow && attachedSiteView && siteShown) attachedSiteView.setBounds(siteBoundsToApply());
 }
 
 // アクティブなタブの view だけを画面に付ける（前のタブの view は外す）。
@@ -187,7 +212,7 @@ function attachActiveSiteView() {
     const [width, height] = mainWindow.getContentSize();
     siteViewBounds = { x: 0, y: SITE_VIEW_TOP, width, height: height - SITE_VIEW_TOP };
   }
-  view.setBounds(siteViewBounds);
+  view.setBounds(siteBoundsToApply());
   sendSiteState();
 }
 
@@ -243,6 +268,12 @@ function createSiteTab(url = START_URL, { activate = true } = {}) {
     if (tab.id === activeSiteTabId) sendSiteState();
     // ログアウトされてログイン画面になったときの自動ログイン（DESIGN 4.1）。
     if (credentials.isLoginUrl(contents.getURL())) void attemptAutoLogin(view);
+    // 動画ページを直接開いたときも履歴に残す（DESIGN 4.11）。
+    const videoId = videoIdFromUrl(contents.getURL());
+    if (videoId) {
+      const title = String(contents.getTitle() || '').replace(/\s*[-|]\s*TOKYO\s*Motion\s*$/i, '');
+      recordSiteHistory(videoId, title);
+    }
     sendTabsChanged();
   });
   contents.on('did-navigate-in-page', () => {
@@ -252,6 +283,12 @@ function createSiteTab(url = START_URL, { activate = true } = {}) {
   });
   contents.on('page-title-updated', (_event, title) => {
     tab.title = title;
+    // 動画ページのタイトルは did-navigate の時点ではまだ空のことがあるので、確定後に履歴へ入れ直す。
+    const videoId = videoIdFromUrl(contents.getURL());
+    if (videoId && appStore) {
+      const clean = String(title || '').replace(/\s*[-|]\s*TOKYO\s*Motion\s*$/i, '');
+      if (clean) appStore.saveHistory(history.updateHistoryFields(appStore.loadHistory(), videoId, { title: clean }));
+    }
     sendTabsChanged();
   });
   // ページ内検索（Ctrl+F）の結果は、アクティブなタブのものだけ renderer に渡す。
@@ -273,6 +310,9 @@ function createSiteTab(url = START_URL, { activate = true } = {}) {
     else if (input.alt && input.key === 'ArrowLeft') { event.preventDefault(); if (contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack(); }
     else if (input.alt && input.key === 'ArrowRight') { event.preventDefault(); if (contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward(); }
   });
+  // 動画をプレイヤーで全画面にしたら、サイト表示をウィンドウ全体に広げてバー類を覆う。
+  contents.on('enter-html-full-screen', () => enterSiteFullscreen(tab.id));
+  contents.on('leave-html-full-screen', () => leaveSiteFullscreen());
   if (DEBUG_HOSTS) enableVideoTagDebug(contents);
   contents.loadURL(url);
 
@@ -581,15 +621,20 @@ function showChangelogDialog() {
 // ヘルプ→使い方。主な機能の短い説明。
 function showUsageDialog() {
   const detail = [
-    '■ サイト表示：ログインして動画を見る画面。広告や別サイトへの移動は止めます。',
-    '■ フィード：フレンド・購読ユーザーの新着をまとめて表示。「更新」で取得します。',
-    '■ 検索：サイト内検索が使いにくいとき、Google 経由で動画を探してカードにします。',
-    '　（Google が拾える公開ページだけなので、PRIVATE 動画は基本出ません）',
-    '■ 整理した動画：★・独自の名前・タグを付けた動画だけを一覧できます。',
-    '■ ダウンロード：自分で再生できる動画を保存します。',
+    '■ フィード：フレンド・購読ユーザーの新着をまとめて表示。「更新」で取得。',
+    '　左の一覧で人を絞り込み。カードの投稿者名クリックでその人の動画だけに。',
+    '■ 検索：Google 経由で動画を探してカードに取り込みます（サイト内検索の代わり）。',
+    '　公開ページだけなので PRIVATE 動画は基本出ません。CAPTCHA が出たら解いて「続きを取り込む」。',
+    '■ 整理した動画：★・独自の名前・タグを付けた動画を一覧。',
+    '■ 履歴：見た動画を新しい順に一覧（「履歴を消去」で消去）。',
+    '■ ダウンロード：自分で再生できる動画を保存。',
     '',
-    'カードの操作：クリックで動画を開く／★で得点／✎で名前・タグ編集／「保存」でダウンロード。',
-    'カードにカーソルを当てると、サムネ・投稿者・タグを読み込みます。'
+    'カード：クリックで開く／右クリックで「新しいタブで開く」／★で得点／✎で名前・タグ。',
+    'サイト表示：複数タブ対応。右クリックでコピー等。Ctrl+F ページ内検索、',
+    'Ctrl+T 新規タブ / Ctrl+W 閉じる / Ctrl+L アドレス欄 / Alt+←→ 戻る進む。',
+    '動画ページの上部「✎ この動画にメモ」で名前・タグ・★を付けられます。',
+    '',
+    '更新内容は「ヘルプ → 更新履歴」、要望は「ヘルプ → 要望・不具合を送る」から。'
   ].join('\n');
   dialog.showMessageBox(mainWindow ?? undefined, {
     type: 'info',
@@ -620,6 +665,10 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   attachContextMenu(mainWindow.webContents);
   mainWindow.webContents.on('will-navigate', event => event.preventDefault());
+  // 動画の全画面中はウィンドウのリサイズ（OS 全画面への切替含む）に合わせて広げ直す。
+  mainWindow.on('resize', () => {
+    if (siteHtmlFullscreen && attachedSiteView && siteShown) attachedSiteView.setBounds(siteBoundsToApply());
+  });
   mainWindow.on('closed', () => {
     mainWindow = undefined;
     siteShown = false;
@@ -1124,6 +1173,56 @@ async function runGoogleEnrich() {
   }
 }
 
+// ---- 見た動画の履歴（DESIGN 4.11） ----
+// 履歴は端末内だけに保存し、外部には送らない。
+
+// 1 件を履歴の先頭に足す（カードから開いたとき・サイト表示で動画ページを開いたとき）。
+function recordHistory(meta) {
+  if (!appStore) return;
+  const list = history.addHistory(appStore.loadHistory(), meta, Date.now());
+  appStore.saveHistory(list);
+}
+
+// サイト表示で /video/<id> を直接開いたときの履歴。title はページから、
+// thumb/user/duration は取得キュー（4.4 の間隔）で parseVideoPage を使い裏で後入れする。
+function recordSiteHistory(id, title) {
+  if (!appStore || !videoIdFromUrl) return;
+  const before = appStore.loadHistory();
+  const existing = Array.isArray(before) ? before.find(record => record?.id === id) : null;
+  recordHistory({ id, title });
+  // サムネなどが未取得のものだけ、裏で 1 本ずつ埋める（既に分かっていれば取り直さない）。
+  if (!existing || !existing.thumb) enqueueHistoryEnrich(id);
+}
+
+const historyEnrichQueue = [];
+let historyEnrichRunning = false;
+function enqueueHistoryEnrich(id) {
+  if (historyEnrichQueue.includes(id)) return;
+  historyEnrichQueue.push(id);
+  if (!historyEnrichRunning) void runHistoryEnrich();
+}
+
+async function runHistoryEnrich() {
+  historyEnrichRunning = true;
+  try {
+    while (historyEnrichQueue.length > 0) {
+      const id = historyEnrichQueue.shift();
+      try {
+        const page = await feedFetcher.fetch(videoPageUrl(id));
+        const parsed = parseVideoPage(page.body);
+        const list = history.updateHistoryFields(appStore.loadHistory(), id, {
+          thumb: parsed.thumb,
+          user: parsed.user,
+          duration: parsed.duration
+        });
+        appStore.saveHistory(list);
+      } catch { /* 1 本の失敗（削除・停止）では止めず次へ */ }
+    }
+  } finally {
+    historyEnrichRunning = false;
+  }
+}
+
 ipcMain.handle('feed:refresh', async (_event, options) => {
   if (options?.auto === true) {
     if (autoRefreshStarted) return { ok: false, skipped: true };
@@ -1180,8 +1279,24 @@ ipcMain.handle('feed:person-page', async (event, options) => withNotes(await fee
     requestId: options?.requestId
   })
 })));
-ipcMain.handle('feed:watch', (_event, id, watched) => {
+ipcMain.handle('feed:watch', (_event, id, watched, meta) => {
+  id = Number(id);
   feedService.markWatched(id, watched !== false);
+  // 開いたとき（watched=true）はカードの情報で履歴に足す（DESIGN 4.11）。
+  if (watched !== false && Number.isSafeInteger(id) && id > 0) {
+    recordHistory({ id, ...(meta && typeof meta === 'object' ? meta : {}) });
+  }
+  return true;
+});
+
+// ---- 見た動画の履歴（DESIGN 4.11）。端末内だけに保存する ----
+ipcMain.handle('history:list', (_event, options) => {
+  const result = history.historyPage(appStore.loadHistory(), options || {});
+  // 独自の名前・タグ・得点はカードでも表示する（フィード・整理タブと同じ）。
+  return { ...result, items: notes.attachNotes(result.items, appStore.loadNotes()) };
+});
+ipcMain.handle('history:clear', () => {
+  appStore.saveHistory([]);
   return true;
 });
 ipcMain.handle('feed:mute', (_event, user, muted) => {

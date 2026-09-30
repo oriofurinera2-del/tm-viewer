@@ -19,6 +19,7 @@
       <button type="button" data-view="feed"><span class="tab-icon" aria-hidden="true">📥</span><span class="tab-label">フィード</span></button>
       <button type="button" data-view="search"><span class="tab-icon" aria-hidden="true">🔎</span><span class="tab-label">検索</span></button>
       <button type="button" data-view="organized"><span class="tab-icon" aria-hidden="true">⭐</span><span class="tab-label">整理した動画</span></button>
+      <button type="button" data-view="history"><span class="tab-icon" aria-hidden="true">🕘</span><span class="tab-label">履歴</span></button>
       <button type="button" data-view="downloads"><span class="tab-icon" aria-hidden="true">⬇</span><span class="tab-label">ダウンロード</span></button>
       <button type="button" data-view="settings"><span class="tab-icon" aria-hidden="true">⚙</span><span class="tab-label">設定</span></button>
     </nav>
@@ -73,6 +74,16 @@
       <div id="org-pager-top" class="pager"></div>
       <div id="org-grid"></div>
       <div id="org-pager-bottom" class="pager"></div>
+    </section>
+
+    <section id="history" hidden>
+      <div class="feed-tools">
+        <button type="button" id="history-clear">履歴を消去</button>
+        <span id="history-count" class="filter-label"></span>
+      </div>
+      <div id="history-pager-top" class="pager"></div>
+      <div id="history-grid"></div>
+      <div id="history-pager-bottom" class="pager"></div>
     </section>
 
     <section id="search" hidden>
@@ -144,24 +155,52 @@
           </ol>
         </details>
         <details class="help">
-          <summary>普段の使い方</summary>
+          <summary>フィード（新着を見る）</summary>
           <ul>
             <li><b>フィードタブ</b>：フレンド・購読ユーザーの新着をまとめて表示。起動時に 1 回だけ自動更新し、あとは「更新」ボタンで手動更新します。</li>
             <li><b>左の一覧で人を選ぶ</b>とその人だけに絞れます。「すべて」で全員分。見たくない人は目のアイコンで非表示にできます。</li>
-            <li><b>カードをクリック</b>するとサイト表示タブで再生します（見た動画は視聴済みになります）。</li>
+            <li><b>カードをクリック</b>するとサイト表示で再生します（見た動画は視聴済みになり、履歴にも残ります）。</li>
+            <li><b>カードの投稿者（アイコン・名前）をクリック</b>すると、その投稿者だけの動画に切り替わります。</li>
+            <li><b>カードを右クリック</b>すると「新しいタブで開く」を選べます。</li>
             <li>気になる動画は <b>★を直接クリック</b>、<b>✎で名前・独自タグ</b>を付けられます。</li>
-            <li>保存したい動画は <b>ダウンロードボタン</b>を押すと、ダウンロードタブで進み具合を確認できます。</li>
           </ul>
         </details>
         <details class="help">
-          <summary>探す・整理する</summary>
+          <summary>検索（動画を探す）</summary>
           <ul>
-            <li><b>検索</b>：語を入れてサイト検索。公開／PRIVATE・期間・並べ替えを切り替えられます。</li>
-            <li><b>整理した動画タブ</b>：★や名前を付けた動画をまとめて表示。絞り込み・並べ替えができます。</li>
+            <li><b>検索タブ</b>で語を入れて「Googleで探す」を押すと、Google 経由で探して結果を動画カードとして取り込みます（サイト内検索が使いにくいときの代わり）。</li>
+            <li>次のページまで自動でたどって取り込みます。確認画面（CAPTCHA）が出たら、その画面で解いてから「続きを取り込む」を押してください。</li>
+            <li>Google が拾えるのは公開ページだけなので、<b>PRIVATE（非公開）動画は基本的に出てきません</b>。</li>
+            <li>取り込んだカードにも ★・名前・独自タグを付けられます（付けた動画は「整理した動画」に残ります）。</li>
+          </ul>
+        </details>
+        <details class="help">
+          <summary>整理・履歴</summary>
+          <ul>
+            <li><b>整理した動画タブ</b>：★や名前・独自タグを付けた動画をまとめて表示。絞り込み・並べ替えができます。</li>
+            <li><b>履歴タブ</b>：見た動画を新しい順に一覧します。「履歴を消去」で消せます。</li>
             <li>タグは 2 種類あります：サイトのタグ（読むだけ）と、自分の独自タグ（自由に付け外し）。どちらでも絞り込めます。</li>
           </ul>
         </details>
-        <p class="help-note">更新は手動が基本です（サイトに負担をかけないため）。放っておいても勝手に何度も取りに行きません。保存したデータはすべてこの PC 内だけにあります。</p>
+        <details class="help">
+          <summary>サイト表示（ブラウザとして）</summary>
+          <ul>
+            <li><b>複数タブ</b>で開けます（＋で新規タブ、× で閉じる、リンクを中クリック／右クリックで新しいタブ）。</li>
+            <li><b>右クリック</b>でコピー・貼り付け・リンクをコピー・戻る／進む／再読み込み。</li>
+            <li><b>キーボード</b>：Ctrl+F ページ内検索／Ctrl+T 新規タブ／Ctrl+W タブを閉じる／Ctrl+L アドレス欄／Ctrl+R 再読み込み／Alt+←→ 戻る・進む。</li>
+            <li>動画ページを開くと、上に <b>「✎ この動画にメモ」</b>（名前・独自タグ・★）が出ます。</li>
+          </ul>
+        </details>
+        <details class="help">
+          <summary>保存・更新・その他</summary>
+          <ul>
+            <li>見られる動画は <b>ダウンロードボタン</b>で保存でき、ダウンロードタブで進み具合を確認できます。</li>
+            <li>取得（更新）は手動が基本です（サイトに負担をかけないため）。放っておいても勝手に何度も取りに行きません。</li>
+            <li>アプリ自体の更新は自動です。新しい版が出ると「再起動して更新」の案内が出ます（<b>ヘルプ → 更新履歴</b>で変更点を確認できます）。</li>
+            <li>要望・不具合は <b>ヘルプ → 要望・不具合を送る</b> から送れます。</li>
+          </ul>
+        </details>
+        <p class="help-note">保存したデータ（独自の名前・タグ・★・履歴・視聴済みなど）は、すべてこの PC 内だけにあります。</p>
       </div>
 
       <div class="settings-group">

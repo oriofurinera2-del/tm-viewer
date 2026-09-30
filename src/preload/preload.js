@@ -91,8 +91,13 @@ contextBridge.exposeInMainWorld('tmViewer', {
       ipcRenderer.on('feed:site-tags', listener);
       return () => ipcRenderer.removeListener('feed:site-tags', listener);
     },
-    watch: (id, watched) => ipcRenderer.invoke('feed:watch', id, watched),
+    watch: (id, watched, meta) => ipcRenderer.invoke('feed:watch', id, watched, meta),
     mute: (user, muted) => ipcRenderer.invoke('feed:mute', user, muted)
+  },
+  // 見た動画の履歴（DESIGN 4.11）。端末内だけに保存する。
+  history: {
+    list: options => ipcRenderer.invoke('history:list', options),
+    clear: () => ipcRenderer.invoke('history:clear')
   },
   notes: {
     context: id => ipcRenderer.invoke('notes:context', id),

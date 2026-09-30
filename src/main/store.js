@@ -7,7 +7,8 @@ const FILES = {
   feedCache: 'feed-cache.json',
   state: 'state.json',
   notes: 'notes.json',
-  settings: 'settings.json'
+  settings: 'settings.json',
+  history: 'history.json'
 };
 
 function readJson(filePath, fallback) {
@@ -42,7 +43,9 @@ function createStore(userDataPath) {
     loadNotes: () => read('notes', {}),
     saveNotes: value => write('notes', value),
     loadSettings: () => read('settings', {}),
-    saveSettings: value => write('settings', value)
+    saveSettings: value => write('settings', value),
+    loadHistory: () => read('history', []),
+    saveHistory: value => write('history', value)
   };
 }
 

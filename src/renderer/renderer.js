@@ -5,6 +5,7 @@ const findApi = window.tmViewer.find;
 const google = window.tmViewer.google;
 const feed = window.tmViewer.feed;
 const notes = window.tmViewer.notes;
+const history = window.tmViewer.history;
 const download = window.tmViewer.download;
 const credentials = window.tmViewer.credentials;
 const update = window.tmViewer.update;
@@ -17,13 +18,14 @@ function opts() { return { includeSubscriptions: state.includeSubscriptions, vie
 function isCurrent(requestId) { return requestId === state.requestId; }
 function setView(name) {
   const show = name === 'site';
-  $('feed').hidden = name !== 'feed'; $('search').hidden = name !== 'search'; $('organized').hidden = name !== 'organized'; $('site').hidden = !show; $('downloads').hidden = name !== 'downloads'; $('settings').hidden = name !== 'settings';
+  $('feed').hidden = name !== 'feed'; $('search').hidden = name !== 'search'; $('organized').hidden = name !== 'organized'; $('history').hidden = name !== 'history'; $('site').hidden = !show; $('downloads').hidden = name !== 'downloads'; $('settings').hidden = name !== 'settings';
   document.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('active', x.dataset.view === name));
   site.command(show ? 'show' : 'hide');
   if (show) bounds();
   else if (name === 'feed') void draw(true);
   else if (name === 'search') $('google-search-term').focus();
   else if (name === 'organized') void drawOrganized();
+  else if (name === 'history') void drawHistory();
   else if (name === 'downloads') renderDownloadsTab();
   else if (name === 'settings') void drawCredentials();
   applyGoogleView();
@@ -244,7 +246,45 @@ function buildTagEditor(currentTags, onChange) {
   return wrap;
 }
 
-function videoCard(video, { url = `https://www.tokyomotion.net/video/${video.id}`, sourceLabel = '', preventTagFetch = false, markWatched = true } = {}) {
+// カードの右クリックメニュー（新しいタブで開く / 開く）。絶対配置の小さな独自メニュー。
+let cardMenuEl = null;
+function closeCardMenu() {
+  if (!cardMenuEl) return;
+  cardMenuEl.remove(); cardMenuEl = null;
+  document.removeEventListener('mousedown', onCardMenuOutside, true);
+  document.removeEventListener('keydown', onCardMenuKey, true);
+}
+function onCardMenuOutside(event) { if (cardMenuEl && !cardMenuEl.contains(event.target)) closeCardMenu(); }
+function onCardMenuKey(event) { if (event.key === 'Escape') closeCardMenu(); }
+function showCardContextMenu(x, y, video, url, openHere) {
+  closeCardMenu();
+  const menu = document.createElement('div'); menu.className = 'card-menu';
+  const meta = { title: video.title, user: video.user, thumb: video.thumb, duration: video.duration };
+  const addItem = (label, run) => {
+    const item = document.createElement('button'); item.type = 'button'; item.className = 'card-menu-item'; item.textContent = label;
+    item.onclick = event => { event.stopPropagation(); closeCardMenu(); run(); };
+    menu.append(item);
+  };
+  addItem('新しいタブで開く', () => { void feed.watch(video.id, true, meta); void tabsApi.new(url); setView('site'); });
+  addItem('開く', () => { void openHere(); });
+  // まず画面外に置いて実寸を測り、右端・下端からはみ出さない位置に補正する。
+  menu.style.left = '0'; menu.style.top = '0'; menu.style.visibility = 'hidden';
+  document.body.append(menu);
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(x, window.innerWidth - rect.width - 4)}px`;
+  menu.style.top = `${Math.min(y, window.innerHeight - rect.height - 4)}px`;
+  menu.style.visibility = '';
+  cardMenuEl = menu;
+  document.addEventListener('mousedown', onCardMenuOutside, true);
+  document.addEventListener('keydown', onCardMenuKey, true);
+}
+// 「YYYY/MM/DD HH:mm」。履歴カードで「いつ見たか」を出すのに使う。
+function watchedAtLabel(at) {
+  if (!Number.isFinite(at) || at <= 0) return '';
+  const d = new Date(at); const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function videoCard(video, { url = `https://www.tokyomotion.net/video/${video.id}`, sourceLabel = '', preventTagFetch = false, markWatched = true, watchedAt = null } = {}) {
   const note = { name: video.note?.name || '', tags: Array.isArray(video.note?.tags) ? [...video.note.tags] : [], score: Number.isInteger(video.note?.score) ? video.note.score : 0 };
   const wrap = document.createElement('div'); wrap.className = 'card-wrap';
   const b = document.createElement('div'); b.className = `video-card${video.watched ? ' watched' : ''}`; b.tabIndex = 0; b.setAttribute('role', 'button');
@@ -317,9 +357,14 @@ function videoCard(video, { url = `https://www.tokyomotion.net/video/${video.id}
 
   if (video.user) b.append(image, dur, titleBox, info, badges, starsBox, customTagsBox, siteTagsBox);
   else b.append(image, dur, titleBox, badges, starsBox, customTagsBox, siteTagsBox);
-  const openCard = async () => { if (markWatched) await feed.watch(video.id, true); await site.command('navigate', url); setView('site'); };
+  // 履歴カードなど、いつ見たかを小さく添える。
+  const seenText = watchedAtLabel(watchedAt);
+  if (seenText) { const seen = document.createElement('small'); seen.className = 'card-watched-at'; seen.textContent = `視聴 ${seenText}`; b.append(seen); }
+  const openCard = async () => { if (markWatched) await feed.watch(video.id, true, { title: video.title, user: video.user, thumb: video.thumb, duration: video.duration }); await site.command('navigate', url); setView('site'); };
   b.onclick = () => void openCard();
   b.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openCard(); } };
+  // 右クリックで「新しいタブで開く / 開く」の小さなメニューを出す（ブラウザ既定メニューは抑止）。
+  b.addEventListener('contextmenu', event => { event.preventDefault(); showCardContextMenu(event.clientX, event.clientY, video, url, openCard); });
 
   // ダウンロード（DESIGN 4.9）・編集（✎、4.8）。カードの中に入れず、上に重ねる。
   const saveBtn = document.createElement('button'); saveBtn.type = 'button'; saveBtn.className = 'card-download'; saveBtn.textContent = '保存'; saveBtn.title = 'この動画をダウンロード';
@@ -511,6 +556,28 @@ async function drawOrganized() {
   pager('org-pager-top', result.page, result.pages, goOrgPage);
   pager('org-pager-bottom', result.page, result.pages, goOrgPage);
 }
+// ---- 見た動画の履歴（4.11）: 新しい順にカード表示。端末内だけに保存 ----
+const histState = { page: 1 };
+async function drawHistory() {
+  const result = await history.list({ page: histState.page }).catch(() => null);
+  if (!result) return;
+  histState.page = result.page;
+  $('history-count').textContent = result.total
+    ? `全 ${result.total} 件中 ${(result.page - 1) * 100 + 1}〜${Math.min(result.total, result.page * 100)} 件目`
+    : '0 件';
+  const grid = $('history-grid'); grid.textContent = '';
+  if (!result.items.length) grid.textContent = 'まだ履歴はありません。動画を開くとここに残ります。';
+  result.items.forEach(x => grid.append(videoCard(x, { watchedAt: x.at })));
+  const goHistPage = page => { histState.page = page; void drawHistory(); };
+  pager('history-pager-top', result.page, result.pages, goHistPage);
+  pager('history-pager-bottom', result.page, result.pages, goHistPage);
+}
+$('history-clear').onclick = async () => {
+  await history.clear().catch(() => {});
+  histState.page = 1;
+  void drawHistory();
+};
+
 $('org-site-tag').onchange = e => { orgState.siteTag = e.target.value; orgState.page = 1; void drawOrganized(); };
 $('org-min').onchange = e => { orgState.minScore = Number(e.target.value); orgState.page = 1; void drawOrganized(); };
 $('org-sort').onchange = e => { orgState.sort = e.target.value; orgState.page = 1; void drawOrganized(); };
