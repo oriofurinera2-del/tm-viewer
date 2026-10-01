@@ -5,8 +5,11 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const {
   CanceledError,
+  DEFAULT_DOWNLOAD_CONCURRENCY,
+  MAX_DOWNLOAD_CONCURRENCY,
   READ_PLAYER_SOURCES_SCRIPT,
   buildFileName,
+  clampConcurrency,
   createDownloadQueue,
   extensionFor,
   httpErrorMessage,
@@ -87,10 +90,11 @@ test('ページで実行するスクリプトは video と source だけを読�
   assert.doesNotMatch(READ_PLAYER_SOURCES_SCRIPT, /input|password|cookie|form/i);
 });
 
-test('キューは 1 本ずつ追加した順に保存する', async () => {
+test('同時数 1 なら 1 本ずつ追加した順に保存する', async () => {
   const log = [];
   let running = 0;
   const queue = createDownloadQueue({
+    concurrency: 1,
     resolveUrl: async job => {
       running += 1;
       assert.equal(running, 1);
@@ -113,8 +117,91 @@ test('キューは 1 本ずつ追加した順に保存する', async () => {
   await queue.idle();
 
   assert.deepEqual(log, ['resolve 1', 'save 1', 'resolve 2', 'save 2', 'resolve 3', 'save 3']);
-  assert.equal(queue.active, null);
+  assert.deepEqual(queue.active, []);
   assert.deepEqual(queue.pending, []);
+});
+
+test('同時数の上限と既定・丸め', () => {
+  assert.equal(DEFAULT_DOWNLOAD_CONCURRENCY, 5);
+  assert.equal(MAX_DOWNLOAD_CONCURRENCY, 5);
+  assert.equal(clampConcurrency(0), 1);
+  assert.equal(clampConcurrency(1), 1);
+  assert.equal(clampConcurrency(5), 5);
+  assert.equal(clampConcurrency(9), 5);
+  assert.equal(clampConcurrency(3.7), 3);
+  assert.equal(clampConcurrency('2'), 2);
+  assert.equal(clampConcurrency('x'), DEFAULT_DOWNLOAD_CONCURRENCY);
+});
+
+test('解決は直列・転送は並列（最大 N 本）', async () => {
+  const events = [];
+  let resolving = 0;      // 同時に解決中の本数（常に 1 以下のはず）
+  let saving = 0;         // 同時に転送中の本数
+  let maxSaving = 0;
+  const gates = new Map();
+  const queue = createDownloadQueue({
+    concurrency: 3,
+    resolveUrl: async job => {
+      resolving += 1;
+      assert.equal(resolving, 1, '解決は同時に 1 本だけ');
+      await new Promise(resolve => setImmediate(resolve));
+      resolving -= 1;
+      events.push(`resolved ${job.id}`);
+      return { url: `https://www.tokyomotion.net/vsrc/sd/${job.id}` };
+    },
+    // 転送はゲートで待たせ、3 本まで同時に走ることを確かめる。
+    save: async job => {
+      saving += 1;
+      maxSaving = Math.max(maxSaving, saving);
+      await new Promise(resolve => gates.set(job.id, resolve));
+      saving -= 1;
+      return { fileName: `${job.id}.mp4` };
+    }
+  });
+
+  for (const id of [1, 2, 3, 4]) queue.add({ id });
+  // 3 本が転送に入るまで待つ（4 本目はスロット待ち）。
+  while (saving < 3) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(maxSaving, 3);
+  assert.equal(saving, 3);
+  // 走行中 3・待機 1。
+  assert.equal(queue.active.length, 3);
+  assert.deepEqual(queue.pending, [4]);
+  // 1 本終わらせると 4 本目が走り出す。
+  gates.get(1)();
+  while (!gates.has(4)) await new Promise(resolve => setImmediate(resolve));
+  gates.forEach(resolve => resolve());
+  await queue.idle();
+  assert.equal(maxSaving, 3, '同時転送は上限 3 を超えない');
+});
+
+test('同時数を増やすと待機中が追加で走り出す', async () => {
+  let saving = 0;
+  let maxSaving = 0;
+  const gates = new Map();
+  const queue = createDownloadQueue({
+    concurrency: 1,
+    resolveUrl: async job => ({ url: `https://www.tokyomotion.net/vsrc/sd/${job.id}` }),
+    save: async job => {
+      saving += 1;
+      maxSaving = Math.max(maxSaving, saving);
+      await new Promise(resolve => gates.set(job.id, resolve));
+      saving -= 1;
+      return { fileName: `${job.id}.mp4` };
+    }
+  });
+
+  for (const id of [1, 2, 3]) queue.add({ id });
+  while (saving < 1) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(saving, 1);                 // 同時数 1 なので 1 本だけ
+  assert.deepEqual(queue.pending, [2, 3]);
+  assert.equal(queue.setConcurrency(3), 3);
+  while (saving < 3) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(saving, 3);                 // 増やした分が走り出す
+  assert.deepEqual(queue.pending, []);
+  gates.forEach(resolve => resolve());
+  await queue.idle();
+  assert.equal(maxSaving, 3);
 });
 
 test('URL が取れない動画は失敗として知らせ、保存せずに次へ進む', async () => {
@@ -166,6 +253,7 @@ test('待機中の動画は中止すると一覧から消える', async () => {
   let resolveGate;
   const gate = new Promise(resolve => { resolveGate = resolve; });
   const queue = createDownloadQueue({
+    concurrency: 1,
     resolveUrl: async () => { await gate; return { url: 'https://www.tokyomotion.net/vsrc/sd/1' }; },
     save: async () => ({ fileName: '1.mp4' }),
     onUpdate: status => updates.push(status)
@@ -202,7 +290,7 @@ test('保存中の中止は resolveUrl/save の signal を abort し、canceled 
 
   queue.add({ id: 1 });
   await started;
-  assert.equal(queue.active, 1);
+  assert.deepEqual(queue.active, [1]);
   assert.equal(queue.cancel(1), true);
   await queue.idle();
 

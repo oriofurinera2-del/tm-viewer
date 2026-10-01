@@ -137,6 +137,9 @@ contextBridge.exposeInMainWorld('tmViewer', {
     showInFolder: id => ipcRenderer.invoke('download:show', id),
     dir: () => ipcRenderer.invoke('download:dir'),
     chooseDir: () => ipcRenderer.invoke('download:choose-dir'),
+    // 同時ダウンロード数（DESIGN 4.9・1〜5）。取得と、設定変更での即時反映。
+    concurrency: () => ipcRenderer.invoke('download:concurrency'),
+    setConcurrency: value => ipcRenderer.invoke('download:set-concurrency', value),
     onStatus: callback => {
       const listener = (_event, status) => callback(status);
       ipcRenderer.on('download:status', listener);

@@ -763,6 +763,9 @@ site.onState(x => {
 $('download-current').onclick = () => void addDownload(download.current());
 $('download-dir').onclick = async () => { const dir = await download.chooseDir().catch(() => null); if (dir) $('download-dir').title = `保存先: ${dir}`; };
 download.dir().then(dir => { $('download-dir').title = `保存先: ${dir}`; }).catch(() => {});
+// 同時ダウンロード数（DESIGN 4.9・1〜5）。保存値を反映し、変更したら即キューへ。
+download.concurrency().then(info => { if (info && Number.isInteger(info.value)) $('download-concurrency').value = String(info.value); }).catch(() => {});
+$('download-concurrency').onchange = e => { void download.setConcurrency(Number(e.target.value)); };
 feed.onProgress(progress => {
   const done = Number(progress?.done); const total = Number(progress?.total);
   if (Number.isInteger(done) && done >= 0 && Number.isInteger(total) && total >= 0) $('feed-progress').textContent = `取得中 ${done}/${total}`;

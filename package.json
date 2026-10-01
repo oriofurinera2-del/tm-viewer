@@ -1,6 +1,6 @@
 {
   "name": "tm-viewer",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "TOKYO Motion 用の PC 専用ブラウザ",
   "main": "src/main/main.js",
   "private": true,

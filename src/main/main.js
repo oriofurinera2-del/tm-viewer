@@ -15,8 +15,11 @@ const credentials = require('./credentials');
 const { persistableCookies } = require('./cookie-persist');
 const {
   CanceledError,
+  DEFAULT_DOWNLOAD_CONCURRENCY,
+  MAX_DOWNLOAD_CONCURRENCY,
   READ_PLAYER_SOURCES_SCRIPT,
   buildFileName,
+  clampConcurrency,
   createDownloadQueue,
   extensionFor,
   httpErrorMessage,
@@ -697,6 +700,12 @@ function downloadDir() {
   return typeof value === 'string' && value && fs.existsSync(value) ? value : app.getPath('downloads');
 }
 
+// 同時ダウンロード数（DESIGN 4.9）。設定（1〜5）を読み、無ければ既定（5）。
+function downloadConcurrency() {
+  const value = appStore?.loadSettings()?.downloadConcurrency;
+  return value == null ? DEFAULT_DOWNLOAD_CONCURRENCY : clampConcurrency(value);
+}
+
 function sendDownloadStatus(status) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download:status', status);
 }
@@ -847,7 +856,7 @@ function addDownload(id, meta = {}) {
   return { ok: added, message: added ? null : 'すでに保存待ちです' };
 }
 
-downloadQueue = createDownloadQueue({ resolveUrl: resolveVideoUrl, save: saveVideo, onUpdate: sendDownloadStatus });
+downloadQueue = createDownloadQueue({ resolveUrl: resolveVideoUrl, save: saveVideo, onUpdate: sendDownloadStatus, concurrency: DEFAULT_DOWNLOAD_CONCURRENCY });
 
 ipcMain.handle('download:add', (_event, id, meta) => addDownload(Number(id), meta));
 ipcMain.handle('download:current', () => {
@@ -876,6 +885,18 @@ ipcMain.handle('download:choose-dir', async () => {
     appStore.saveSettings({ ...appStore.loadSettings(), downloadDir: result.filePaths[0] });
   }
   return downloadDir();
+});
+// 同時ダウンロード数（DESIGN 4.9・1〜5）。取得と、設定変更での即時反映。
+ipcMain.handle('download:concurrency', () => ({
+  value: downloadConcurrency(),
+  max: MAX_DOWNLOAD_CONCURRENCY,
+  default: DEFAULT_DOWNLOAD_CONCURRENCY
+}));
+ipcMain.handle('download:set-concurrency', (_event, value) => {
+  const next = clampConcurrency(value);
+  appStore.saveSettings({ ...appStore.loadSettings(), downloadConcurrency: next });
+  downloadQueue.setConcurrency(next);
+  return next;
 });
 
 // ---- ログイン情報の保存（任意・DESIGN 4.1） ----
@@ -1407,6 +1428,8 @@ ipcMain.handle('update:install', () => {
 app.whenReady().then(() => {
   buildAppMenu();
   feedFetcher = createFeedServices();
+  // 保存された同時ダウンロード数を反映（appStore は createFeedServices で用意される）。
+  downloadQueue.setConcurrency(downloadConcurrency());
   createWindow();
   setupAutoUpdater();
 });
