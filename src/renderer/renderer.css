@@ -19,8 +19,10 @@ header, .appbar {
   border-bottom: 1px solid #2e3340;
 }
 header { height: 40px; padding: 0 12px; flex: none; }
-.app-name { margin-right: 12px; color: #8b92a3; font-weight: 600; }
-nav { display: flex; height: 100%; }
+#app-notice { margin-left: auto; max-width: min(22vw, 240px); overflow: hidden; color: #b9d4ff; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+#app-notice:empty { display: none; }
+.app-name { margin-right: 12px; color: #8b92a3; font-weight: 600; flex-shrink: 0; }
+nav { display: flex; height: 100%; min-width: 0; overflow-x: auto; }
 nav button {
   display: flex;
   align-items: center;
@@ -32,6 +34,8 @@ nav button {
   color: #8b92a3;
   opacity: .7;
   transition: background-color .15s, color .15s, opacity .15s;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 nav button:hover { background: rgba(255, 255, 255, .06); }
 nav button.active {
@@ -67,6 +71,27 @@ nav .tab-icon { font-size: 14px; line-height: 1; }
 }
 #update-banner #update-install { border-color: #4f8cff; background: rgba(79, 140, 255, .16); }
 #update-banner #update-dismiss { padding: 0 8px; color: #8b92a3; }
+
+/* 版ごとの新機能案内。通常のレイアウト内に置き、サイト表示の領域計算にも反映させる。 */
+#release-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 5px 12px;
+  background: #242833;
+  border-bottom: 1px solid #365a91;
+  color: #c9ddff;
+  font-size: 13px;
+}
+#release-notice button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: #b9d4ff;
+  font-size: 18px;
+  line-height: 1;
+}
 
 main { min-height: 0; flex: 1; }
 section { height: 100%; }
@@ -136,6 +161,8 @@ section { height: 100%; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 #people-panel { width: 240px; flex: none; overflow: auto; padding: 12px; border-right: 1px solid #2e3340; background: #1d2027; }
 #person-search { width: 100%; margin-bottom: 10px; padding: 6px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; }
+.person-sort-label { display: block; margin: 6px 0 3px; color: #aeb6c5; font-size: 12px; }
+#person-sort { width: 100%; margin-bottom: 8px; padding: 5px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; }
 #people > div { display: flex; gap: 4px; margin: 3px 0; }
 #people button { border: 0; background: transparent; color: inherit; padding: 5px; text-align: left; }
 #people button:first-child { flex: 1; }
@@ -188,6 +215,13 @@ section { height: 100%; }
 #org-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px; min-height: 80px; margin-top: 12px; }
 #history { overflow: auto; padding: 18px; }
 #history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px; min-height: 80px; margin-top: 12px; }
+#favorites { overflow: auto; padding: 18px; }
+.favorites-tools { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+#favorite-search { min-width: 240px; padding: 6px; background: #16181d; color: inherit; border: 1px solid #2e3340; border-radius: 4px; }
+#favorites-list { display: flex; flex-direction: column; gap: 5px; max-width: 680px; }
+.favorite-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid #2e3340; border-radius: 5px; background: #1d2027; }
+.favorite-open { flex: 1; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.favorite-row button { padding: 4px 8px; border: 1px solid #3a4151; border-radius: 4px; background: #242833; color: inherit; }
 
 /* 独自の名前・タグ・得点（4.8） */
 .video-card .stars { display: flex; padding: 4px 8px 0; }
@@ -196,6 +230,9 @@ section { height: 100%; }
 .video-card .custom-title { font-weight: 600; font-size: 14px; }
 .video-card .orig-title { color: #8b92a3; font-size: 11px; padding-top: 0; }
 .video-card .custom-tags { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 8px 0; }
+.site-tags { display: flex !important; flex-wrap: wrap; gap: 4px; min-height: 18px; }
+.site-tag { padding: 1px 6px; border: 0; border-radius: 8px; background: #283246; color: #b9d4ff; cursor: pointer; font: inherit; font-size: 11px; }
+.site-tag:hover { background: #35476a; }
 .video-card .custom-tags .utag { display: inline-block; padding: 1px 7px; border-radius: 8px; background: #2f3a52; color: #c5d3f0; font-size: 10px; }
 .video-card .edit-toggle { position: absolute; top: 6px; left: 6px; padding: 2px 7px; border: 1px solid #3a4151; border-radius: 4px; background: rgba(22, 24, 29, .85); font-size: 12px; }
 .card-edit { padding: 8px; border: 1px solid #353b49; border-top: 0; border-radius: 0 0 6px 6px; background: #20242d; display: flex; flex-direction: column; gap: 6px; }

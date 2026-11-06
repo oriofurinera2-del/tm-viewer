@@ -7,9 +7,11 @@ const path = require('node:path');
 const {
   DEFAULT_ALLOWLIST,
   buildGoogleSearchUrl,
+  configureSession,
   createRequestHandler,
   enableVideoTagDebug,
   isAllowedUrl,
+  isAllowedPermission,
   isGoogleHost,
   isGoogleSearchPageUrl,
   isSiteUrl,
@@ -117,6 +119,40 @@ test('許可リストにあるホストだけ通し、それ以外（ランダ�
 test('許可リストが読めない・空のときは初期値を使う', () => {
   assert.deepEqual(readAllowlist(path.join(__dirname, 'no-such-allowlist.json')), [...DEFAULT_ALLOWLIST]);
   assert.deepEqual(readAllowlist(ALLOWLIST_PATH), [...DEFAULT_ALLOWLIST]);
+});
+
+test('セッションはサイト本体の全画面だけを許可し、HTTP(S) の画像だけにも許可リストを適用できる', () => {
+  let filter;
+  let handler;
+  let requestPermission;
+  let checkPermission;
+  const fakeSession = {
+    webRequest: { onBeforeRequest: (value, valueHandler) => { filter = value; handler = valueHandler; } },
+    setPermissionRequestHandler: value => { requestPermission = value; },
+    setPermissionCheckHandler: value => { checkPermission = value; }
+  };
+
+  configureSession(fakeSession, ALLOWLIST_PATH, { resourceTypes: ['image'] });
+  assert.deepEqual(filter, { urls: ['http://*/*', 'https://*/*'], types: ['image'] });
+  const decisions = [];
+  // 初回要求とリダイレクト先は、それぞれの要求として同じ規則で止める。
+  handler({ url: 'https://cdn.tokyo-motion.net/thumb.jpg' }, value => decisions.push(value));
+  handler({ url: 'https://outside.example/redirected-thumb.jpg' }, value => decisions.push(value));
+  assert.deepEqual(decisions, [{ cancel: false }, { cancel: true }]);
+
+  let permissionResult;
+  requestPermission({ getURL: () => 'https://www.tokyomotion.net/video/10' }, 'fullscreen', value => { permissionResult = value; }, {
+    requestingUrl: 'https://www.tokyomotion.net/video/10'
+  });
+  assert.equal(permissionResult, true);
+  requestPermission({ getURL: () => 'https://www.tokyomotion.net/video/10' }, 'media', value => { permissionResult = value; }, {
+    requestingUrl: 'https://www.tokyomotion.net/video/10'
+  });
+  assert.equal(permissionResult, false);
+  assert.equal(checkPermission({}, 'fullscreen', 'https://www.tokyomotion.net'), true);
+  assert.equal(checkPermission({}, 'fullscreen', 'https://www.google.com'), false);
+  assert.equal(checkPermission({}, 'geolocation', 'https://www.tokyomotion.net'), false);
+  assert.equal(isAllowedPermission('fullscreen', 'https://example.com'), false);
 });
 
 test('開発時の通信ログは外部ホスト名と、通した/止めたの結果だけを記録する', () => {

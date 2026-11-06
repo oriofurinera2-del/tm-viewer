@@ -8,7 +8,8 @@ const FILES = {
   state: 'state.json',
   notes: 'notes.json',
   settings: 'settings.json',
-  history: 'history.json'
+  history: 'history.json',
+  favorites: 'favorites.json'
 };
 
 function readJson(filePath, fallback) {
@@ -45,7 +46,9 @@ function createStore(userDataPath) {
     loadSettings: () => read('settings', {}),
     saveSettings: value => write('settings', value),
     loadHistory: () => read('history', []),
-    saveHistory: value => write('history', value)
+    saveHistory: value => write('history', value),
+    loadFavorites: () => read('favorites', []),
+    saveFavorites: value => write('favorites', value)
   };
 }
 

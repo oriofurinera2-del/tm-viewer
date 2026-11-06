@@ -13,26 +13,30 @@ function temporaryStore(t) {
   return createStore(directory);
 }
 
-test('設計書で決めた4種類の JSON を userData に保存して読み戻す', t => {
+test('設計書で決めた保存用 JSON を userData に保存して読み戻す', t => {
   const store = temporaryStore(t);
   const feedCache = { user_a: { fetchedAt: 10, videos: [{ id: 12 }] } };
   const state = { me: 'me', watched: [12], muted: [] };
   const notes = { 12: { name: 'memo', tags: ['tag'], score: 4 } };
   const settings = { intervalMs: 2000, cacheMinutes: 30 };
+  const favorites = [{ name: 'tag', url: 'https://www.tokyomotion.net/search?search_query=tag&search_type=videos' }];
 
   store.saveFeedCache(feedCache);
   store.saveState(state);
   store.saveNotes(notes);
   store.saveSettings(settings);
+  store.saveFavorites(favorites);
 
   assert.deepEqual(store.loadFeedCache(), feedCache);
   assert.deepEqual(store.loadState(), state);
   assert.deepEqual(store.loadNotes(), notes);
   assert.deepEqual(store.loadSettings(), settings);
+  assert.deepEqual(createStore(path.dirname(store.paths.favorites)).loadFavorites(), favorites);
   assert.equal(path.basename(store.paths.feedCache), 'feed-cache.json');
   assert.equal(path.basename(store.paths.state), 'state.json');
   assert.equal(path.basename(store.paths.notes), 'notes.json');
   assert.equal(path.basename(store.paths.settings), 'settings.json');
+  assert.equal(path.basename(store.paths.favorites), 'favorites.json');
 });
 
 test('未作成または壊れた JSON は呼び出し元の既定値で読む', t => {

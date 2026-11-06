@@ -4,13 +4,14 @@ const tabsApi = window.tmViewer.tabs;
 const findApi = window.tmViewer.find;
 const google = window.tmViewer.google;
 const feed = window.tmViewer.feed;
+const favorites = window.tmViewer.favorites;
 const notes = window.tmViewer.notes;
 const history = window.tmViewer.history;
 const download = window.tmViewer.download;
 const credentials = window.tmViewer.credentials;
 const update = window.tmViewer.update;
 const $ = id => document.getElementById(id);
-const state = { selectedUser: null, page: 1, viewableOnly: true, includeSubscriptions: true, search: '', requestId: 0 };
+const state = { selectedUser: null, page: 1, viewableOnly: true, includeSubscriptions: true, search: '', peopleSort: 'unread', requestId: 0 };
 const back = $('back');
 const forward = $('forward');
 
@@ -18,18 +19,20 @@ function opts() { return { includeSubscriptions: state.includeSubscriptions, vie
 function isCurrent(requestId) { return requestId === state.requestId; }
 function setView(name) {
   const show = name === 'site';
-  $('feed').hidden = name !== 'feed'; $('search').hidden = name !== 'search'; $('organized').hidden = name !== 'organized'; $('history').hidden = name !== 'history'; $('site').hidden = !show; $('downloads').hidden = name !== 'downloads'; $('settings').hidden = name !== 'settings';
+  $('feed').hidden = name !== 'feed'; $('search').hidden = name !== 'search'; $('organized').hidden = name !== 'organized'; $('favorites').hidden = name !== 'favorites'; $('history').hidden = name !== 'history'; $('site').hidden = !show; $('downloads').hidden = name !== 'downloads'; $('settings').hidden = name !== 'settings';
   document.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('active', x.dataset.view === name));
   site.command(show ? 'show' : 'hide');
   if (show) bounds();
   else if (name === 'feed') void draw(true);
   else if (name === 'search') $('google-search-term').focus();
   else if (name === 'organized') void drawOrganized();
+  else if (name === 'favorites') void drawFavorites();
   else if (name === 'history') void drawHistory();
   else if (name === 'downloads') renderDownloadsTab();
   else if (name === 'settings') void drawCredentials();
   applyGoogleView();
 }
+function showNotice(message) { $('app-notice').textContent = message || ''; }
 function bounds() { const r = $('site-area').getBoundingClientRect(); site.setBounds({ x: r.left, y: r.top, width: r.width, height: r.height }); }
 function pager(id, current, pages, onGo) {
   // 既定（フィード）: ページ移動したら内容の先頭までスクロールを戻す。
@@ -278,6 +281,20 @@ function showCardContextMenu(x, y, video, url, openHere) {
   document.addEventListener('mousedown', onCardMenuOutside, true);
   document.addEventListener('keydown', onCardMenuKey, true);
 }
+function showTagContextMenu(x, y, name) {
+  closeCardMenu();
+  const menu = document.createElement('div'); menu.className = 'card-menu';
+  const item = document.createElement('button'); item.type = 'button'; item.className = 'card-menu-item'; item.textContent = 'お気に入りタグに追加';
+  item.onclick = async event => {
+    event.stopPropagation(); closeCardMenu();
+    const result = await favorites.add(name).catch(() => null);
+    showNotice(result?.message || 'お気に入りタグを追加できませんでした。');
+  };
+  menu.append(item); menu.style.left = '0'; menu.style.top = '0'; menu.style.visibility = 'hidden'; document.body.append(menu);
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(x, window.innerWidth - rect.width - 4)}px`; menu.style.top = `${Math.min(y, window.innerHeight - rect.height - 4)}px`; menu.style.visibility = '';
+  cardMenuEl = menu; document.addEventListener('mousedown', onCardMenuOutside, true); document.addEventListener('keydown', onCardMenuKey, true);
+}
 // 「YYYY/MM/DD HH:mm」。履歴カードで「いつ見たか」を出すのに使う。
 function watchedAtLabel(at) {
   if (!Number.isFinite(at) || at <= 0) return '';
@@ -461,8 +478,25 @@ download.onStatus(status => {
   list.forEach(status => { downloads.set(status.id, status); downloadOrder.push(status.id); });
   updateDownloadsTabLabel();
 })();
+function tagSearchUrl(name) {
+  const url = new URL('https://www.tokyomotion.net/search');
+  url.searchParams.set('search_query', name); url.searchParams.set('search_type', 'videos');
+  return url.toString();
+}
 function showTags(box, values) {
-  const list = Array.isArray(values) ? values : []; box.textContent = list.join(' ・ '); box.title = list.join(' ・ ');
+  const list = Array.isArray(values) ? values.filter(value => typeof value === 'string' && value.trim()) : [];
+  box.textContent = ''; box.title = list.join(' ・ ');
+  list.forEach(name => {
+    const tag = document.createElement('button'); tag.type = 'button'; tag.className = 'site-tag'; tag.textContent = name;
+    tag.title = 'クリックでサイト検索。右クリックでお気に入りに追加';
+    tag.onclick = event => { event.stopPropagation(); void site.command('navigate', tagSearchUrl(name)); setView('site'); };
+    tag.onkeydown = event => event.stopPropagation();
+    tag.oncontextmenu = event => {
+      event.preventDefault(); event.stopPropagation();
+      showTagContextMenu(event.clientX, event.clientY, name);
+    };
+    box.append(tag);
+  });
 }
 function updateTags(id, values) { document.querySelectorAll(`.site-tags[data-id="${Number(id)}"]`).forEach(box => showTags(box, values)); }
 async function loadTags(id) {
@@ -476,7 +510,7 @@ function syncSelectedPeople() {
   });
 }
 async function people(requestId = state.requestId) {
-  const values = await feed.people(opts()); if (!isCurrent(requestId)) return;
+  const values = await feed.people({ ...opts(), sort: state.peopleSort }); if (!isCurrent(requestId)) return;
   const box = $('people'); box.textContent = '';
   const add = (label, user, unread, muted, url) => {
     const row = document.createElement('div'); const pick = document.createElement('button');
@@ -492,6 +526,22 @@ async function people(requestId = state.requestId) {
   add('すべて', null, list.filter(x => !x.muted).reduce((n, x) => n + x.unread, 0));
   list.forEach(x => add(x.user + (x.kind === 'subscription' ? '（購読）' : ''), x.user, x.unread, x.muted, x.avatar));
   syncSelectedPeople();
+}
+let favoriteFilter = '';
+async function drawFavorites() {
+  const items = await favorites.list().catch(() => []);
+  const list = Array.isArray(items) ? items.filter(item => item?.name?.toLocaleLowerCase('ja').includes(favoriteFilter.toLocaleLowerCase('ja'))) : [];
+  const box = $('favorites-list'); box.textContent = '';
+  $('favorites-status').textContent = `${list.length} 件`;
+  if (!list.length) { box.textContent = favoriteFilter ? '一致するタグはありません。' : 'お気に入りタグはまだありません。サイト表示または動画カードのタグを右クリックして追加できます。'; return; }
+  list.forEach(item => {
+    const row = document.createElement('div'); row.className = 'favorite-row';
+    const open = document.createElement('button'); open.type = 'button'; open.className = 'favorite-open'; open.textContent = item.name; open.title = item.url;
+    open.onclick = () => { void site.command('navigate', item.url); setView('site'); };
+    const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '外す';
+    remove.onclick = async () => { const result = await favorites.remove(item.name).catch(() => null); if (result?.ok) void drawFavorites(); else showNotice(result?.message || 'お気に入りタグを外せませんでした。'); };
+    row.append(open, remove); box.append(row);
+  });
 }
 function renderResult(result, selectedUser) {
   state.page = result.page; $('feed-title').textContent = selectedUser || 'すべて';
@@ -653,6 +703,15 @@ update.onReady(info => {
 $('update-install').onclick = () => void update.install();
 $('update-dismiss').onclick = () => { $('update-banner').hidden = true; };
 
+// 0.1.8 の新機能は更新直後に一度だけ案内する。保存できない環境でも、この起動中は閉じられる。
+const RELEASE_NOTICE_KEY = 'tm-viewer.release-notice.0.1.8.closed';
+try { $('release-notice').hidden = localStorage.getItem(RELEASE_NOTICE_KEY) === '1'; } catch { $('release-notice').hidden = false; }
+$('release-notice-close').onclick = () => {
+  $('release-notice').hidden = true;
+  try { localStorage.setItem(RELEASE_NOTICE_KEY, '1'); } catch { /* この起動中は閉じたままにする */ }
+  bounds();
+};
+
 // ---- サイト表示: 動画ページを開いているときだけ、上部バーの下に名前・タグ・得点の入力欄を出す（4.8） ----
 function extractVideoId(url) {
   const m = /^https?:\/\/(www\.)?tokyomotion\.net\/video\/(\d+)/i.exec(url || '');
@@ -754,6 +813,20 @@ $('refresh-feed').onclick = () => void refresh();
 $('viewable-only').onchange = e => { state.viewableOnly = e.target.checked; state.page = 1; void draw(); };
 $('include-subscriptions').onchange = e => { state.includeSubscriptions = e.target.checked; state.selectedUser = null; state.page = 1; void draw(); };
 $('person-search').oninput = e => { state.search = e.target.value.trim().toLowerCase(); void people(); };
+$('person-sort').onchange = async e => {
+  state.peopleSort = await feed.peopleSort(e.target.value).catch(() => state.peopleSort);
+  void people();
+};
+$('favorite-search').oninput = e => { favoriteFilter = e.target.value.trim(); void drawFavorites(); };
+feed.peopleSort().then(sort => {
+  if (['unread', 'name', 'friend-new', 'friend-old'].includes(sort)) {
+    state.peopleSort = sort; $('person-sort').value = sort;
+  }
+}).catch(() => {});
+favorites.onChanged(result => {
+  showNotice(result?.message || 'お気に入りタグを更新しました。');
+  if (!$('favorites').hidden) void drawFavorites();
+});
 site.onState(x => {
   if (x.url) $('address').value = x.url; back.disabled = !x.canGoBack; forward.disabled = !x.canGoForward;
   $('download-current').disabled = !/^https?:\/\/(www\.)?tokyomotion\.net\/video\/\d+(\/|$|\?|#)/i.test(x.url || '');

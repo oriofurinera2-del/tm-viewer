@@ -92,7 +92,18 @@ contextBridge.exposeInMainWorld('tmViewer', {
       return () => ipcRenderer.removeListener('feed:site-tags', listener);
     },
     watch: (id, watched, meta) => ipcRenderer.invoke('feed:watch', id, watched, meta),
-    mute: (user, muted) => ipcRenderer.invoke('feed:mute', user, muted)
+    mute: (user, muted) => ipcRenderer.invoke('feed:mute', user, muted),
+    peopleSort: sort => ipcRenderer.invoke('feed:people-sort', sort)
+  },
+  favorites: {
+    list: () => ipcRenderer.invoke('favorites:list'),
+    add: name => ipcRenderer.invoke('favorites:add', name),
+    remove: name => ipcRenderer.invoke('favorites:remove', name),
+    onChanged: callback => {
+      const listener = (_event, value) => callback(value);
+      ipcRenderer.on('favorites:changed', listener);
+      return () => ipcRenderer.removeListener('favorites:changed', listener);
+    }
   },
   // 見た動画の履歴（DESIGN 4.11）。端末内だけに保存する。
   history: {

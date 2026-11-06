@@ -106,6 +106,7 @@ renderer（アプリ画面）
 - 表示は **100 件ずつ** で「次のページ」で続きを出す（個人の全動画・整理した動画も同じ）。フィードは取得済みのデータを分けて出すだけなので、ページ送りで追加の取得はしない。
 - **非表示（ミュート）**: 左一覧の目アイコンで、その人を「すべて」から外す。絞り込みで開けばその人の動画は見える。
 - サイトの公開新着はフィードに含めない（見たいときはサイト表示で閲覧する）。
+- 左上の並び順は「未読多い順」（初期値）・「名前順」・「友人になった順（新／古）」から選び、選択は端末内に保存する。友人になった順は、更新時にサイトの `o=invite_date` で取得した一覧順を使う。これはサイト表記「最近の友達」の順であり、友人成立日時と一致するかは未確認。
 - **サイトのタグ**: 一覧には無く、動画ごとに `/ajax/video_tag` で取る必要がある（8 章）。更新で見つかった NEW の動画だけ裏で順に取得し（**1 回の更新につき新しい順に 100 本まで**、2026-09-29 ユーザー決定）、それ以外はカードにマウスを乗せたときにその 1 本だけ取る。取ったタグは保存して取り直さない。カードに表示し、絞り込みにも使う。
 
 #### 個人の全動画
@@ -144,8 +145,9 @@ renderer（アプリ画面）
 
 - **許可リスト方式**（2026-09-29 ユーザー決定。旧: 広告ドメインを遮断リストに足す方式は廃止。広告が名前のランダムな配信元に切り替わり追いつかなかったため、8 章）: サイト表示の通信は、許可リストのドメインだけ通し、それ以外はすべて止める。
   - 初期の許可リスト: `tokyomotion.net` とそのサブドメイン（`www44` など動画配信を含む）、`tokyo-motion.net` とそのサブドメイン（`cdn.`）、`cdn.fluidplayer.com`、`bootstrapcdn.com` のサブドメイン、`fonts.googleapis.com`、`fonts.gstatic.com`、`ajax.googleapis.com`。
-  - リストは JSON で差し替え可能にする。開発時の記録（`--debug-hosts`）で止めたドメインが分かるので、サイトの機能が壊れたらそこから足す。
+- リストは JSON で差し替え可能にする。開発時の記録（`--debug-hosts`）で止めたドメインが分かるので、サイトの機能が壊れたらそこから足す。
   - `live.tokyomotion.net` もサブドメインとして通るが、画面の遷移は 4.5 の遷移制限に従う。
+- サイト／Google に使う共有セッションは、カメラ・マイク・位置情報などの権限を拒否する。サイト本体からの動画全画面だけを許可する。アプリ独自画面のサムネイルも HTTP(S) の画像通信に同じ許可リストを適用し、初回・リダイレクト先とも許可外を止める。
 - サイト表示ビューでは `tokyomotion.net` 以外への遷移と `window.open` を拒否する。
 
 ### 4.6 視聴済み
@@ -213,6 +215,12 @@ renderer（アプリ画面）
 - 記録するタイミング: (a) フィード・整理・検索のカードから開いたとき（カードの情報で記録）。(b) サイト表示で `/video/<id>` を直接開いたとき（title はページタイトルから「- TOKYO Motion」を除いたもの。thumb/user/duration は取得キュー〈4.4〉で `parseVideoPage` を使い裏で後入れ）。
 - 「履歴を消去」ボタンで全消去できる（4.6 の視聴済みとは別のデータ）。動画ブックマークは作らない（履歴とは別物）。
 
+### 4.13 お気に入りタグ
+
+- 独立した「お気に入りタグ」画面に 100 件以上を想定して一覧・名前検索・解除を置く。保存は端末内だけで、サイトには書き込まない。
+- アプリの動画カードのサイトタグと、サイト表示内の実サイトタグ検索リンクを右クリックすると「お気に入りタグに追加」を出す。カードのタグをクリックすると通常のサイト検索をサイト表示で開く。
+- サイト表示から追加するときは、`https` の `tokyomotion.net` / `www.tokyomotion.net` の `/search?search_query=...` だけを受け入れ、検索条件を含む元の URL をそのまま保存する。外部 URL・認証情報付き URL・それ以外のリンクは保存しない。
+
 ---
 
 ## 5. 画面
@@ -255,10 +263,11 @@ renderer（アプリ画面）
 
 ```
 feed-cache.json   { "<ユーザー名>": { fetchedAt, allPagesFetchedAt, fetchedSitePages: [取得済みのサイトページ番号...], videos: [{ id, title, duration, hd, private, thumb, ago, postedAtEst, firstSeenAt, siteTags }] } }
-state.json        { me, lastOpenedAt, watched: [id...], muted: [ユーザー名...] }
+state.json        { me, lastOpenedAt, watched, muted, friendOrder, peopleSort }（friendOrder は上記のサイト一覧順）
 credentials.bin   safeStorage で暗号化した { id, password }（4.1 の設定がオンのときだけ存在）
 notes.json        { "<動画ID>": { name, tags: [...], score, user, title, thumb, updatedAt } }
 settings.json     { intervalMs, cacheMinutes, includeSubscriptions, viewableOnly }
+favorites.json    [{ name, url }]（4.13 のお気に入りタグ。端末内だけ）
 allowlist.json    ["tokyomotion.net", "*.tokyomotion.net", ...]（DESIGN 4.5 の許可リスト）
 ```
 

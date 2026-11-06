@@ -39,6 +39,12 @@ function isSiteUrl(value) {
   }
 }
 
+// 動画再生に必要な全画面だけを、サイト本体からの要求に限って許可する。
+// Google・外部サイト、およびカメラ・マイク・位置情報などは例外なく拒否する。
+function isAllowedPermission(permission, requestingUrl) {
+  return permission === 'fullscreen' && isSiteUrl(requestingUrl);
+}
+
 // Google 検索の描画・reCAPTCHA に使うホストか（検索表示中だけ通す判定に使う）。
 function isGoogleHost(hostname) {
   if (typeof hostname !== 'string' || !hostname) return false;
@@ -168,12 +174,27 @@ function createRequestHandler(allowlist, { debugHosts = false, isGoogleSearchReq
   };
 }
 
-function configureSession(siteSession, allowlistPath, options) {
+function configureSession(siteSession, allowlistPath, options = {}) {
   const allowlist = readAllowlist(allowlistPath);
+  // file: のアプリ画面は対象にせず、HTTP(S) の通信だけを判定する。
+  // resourceTypes を渡すと、独自画面のサムネイルなど指定した種類だけに絞れる。
+  const filter = {
+    urls: ['http://*/*', 'https://*/*'],
+    ...(Array.isArray(options.resourceTypes) ? { types: options.resourceTypes } : {})
+  };
   siteSession.webRequest.onBeforeRequest(
-    { urls: ['*://*/*'] },
+    filter,
     createRequestHandler(allowlist, options)
   );
+  // サイト／Google と共有するセッションから、カメラ・マイク・位置情報などを渡さない。
+  // 動画再生用の全画面だけはサイト本体からの要求に限り許可する。
+  siteSession.setPermissionRequestHandler?.((webContents, permission, callback, details) => {
+    const requestingUrl = details?.requestingUrl || webContents?.getURL?.() || '';
+    callback(isAllowedPermission(permission, requestingUrl));
+  });
+  siteSession.setPermissionCheckHandler?.((_webContents, permission, requestingOrigin) => (
+    isAllowedPermission(permission, requestingOrigin)
+  ));
   return allowlist;
 }
 
@@ -189,6 +210,7 @@ module.exports = {
   isAllowedUrl,
   isGoogleHost,
   isGoogleSearchPageUrl,
+  isAllowedPermission,
   isSiteUrl,
   isVideoTagRequest,
   readAllowlist

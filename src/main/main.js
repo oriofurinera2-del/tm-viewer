@@ -12,6 +12,7 @@ const { createFeedService, videoTagRequest } = require('./feed');
 const notes = require('./notes');
 const history = require('./history');
 const credentials = require('./credentials');
+const { defaultTagSearchUrl, normalizeFavorites, siteTagSearch } = require('./favorites');
 const { persistableCookies } = require('./cookie-persist');
 const {
   CanceledError,
@@ -93,6 +94,11 @@ function createFeedServices() {
     debugHosts: DEBUG_HOSTS,
     // Google のホストは、Google 検索の表示中だけ通す（DESIGN 4.10）。意図フラグで判定する。
     isGoogleSearchRequestActive: () => googleSearchActive
+  });
+  // renderer のカード画像も、サイト表示と同じ許可リストを通ったものだけ読み込む。
+  // file: の HTML/CSS 等は filter の対象外。Google の例外も独自画面には広げない。
+  configureSession(session.defaultSession, path.join(__dirname, '../../data/allowlist.json'), {
+    resourceTypes: ['image']
   });
   const store = createStore(app.getPath('userData'));
   appStore = store;
@@ -497,6 +503,8 @@ function attachContextMenu(contents, { navigation = false, siteTab = false } = {
   contents.on('context-menu', (_event, params) => {
     const items = [];
     if (params.linkURL) {
+      const tag = siteTab ? siteTagSearch(params.linkURL) : null;
+      if (tag) items.push({ label: 'お気に入りタグに追加', click: () => addFavoriteTag(tag) });
       // サイト表示では、リンクを新しいタブで開ける（サイトURLのみ）。
       if (siteTab && isSiteUrl(params.linkURL)) {
         items.push({ label: 'リンクを新しいタブで開く', click: () => createSiteTab(params.linkURL) });
@@ -535,6 +543,23 @@ function attachContextMenu(contents, { navigation = false, siteTab = false } = {
     }
     if (items.length) Menu.buildFromTemplate(items).popup();
   });
+}
+
+function favoriteTags() { return normalizeFavorites(appStore?.loadFavorites()); }
+function addFavoriteTag(tag) {
+  try {
+    if (!tag?.name || !tag?.url || !appStore) return { ok: false, message: 'タグを追加できませんでした。' };
+    const current = favoriteTags();
+    const exists = current.some(item => item.name === tag.name);
+    if (!exists) appStore.saveFavorites([...current, tag]);
+    const result = { ok: true, items: favoriteTags(), message: exists ? `お気に入りタグに登録済みです: ${tag.name}` : `お気に入りタグに追加しました: ${tag.name}` };
+    sendToRenderer('favorites:changed', result);
+    return result;
+  } catch {
+    const result = { ok: false, message: 'お気に入りタグを追加できませんでした。' };
+    sendToRenderer('favorites:changed', result);
+    return result;
+  }
 }
 
 // ウィンドウ上部のメニューを日本語の最小メニューに置き換える（5 章、2026-09-29）。
@@ -629,6 +654,8 @@ function showUsageDialog() {
     '■ 検索：Google 経由で動画を探してカードに取り込みます（サイト内検索の代わり）。',
     '　公開ページだけなので PRIVATE 動画は基本出ません。CAPTCHA が出たら解いて「続きを取り込む」。',
     '■ 整理した動画：★・独自の名前・タグを付けた動画を一覧。',
+    '■ お気に入りタグ：カードやサイト表示のタグを右クリックで登録。タグの検索・解除・サイト検索を使えます。',
+    '■ フィード：左上の並び順で未読数・名前・友人になった順を選べます。',
     '■ 履歴：見た動画を新しい順に一覧（「履歴を消去」で消去）。',
     '■ ダウンロード：自分で再生できる動画を保存。',
     '',
@@ -1291,6 +1318,7 @@ function withNotes(result) {
 ipcMain.handle('feed:open', (_event, options) => withNotes(feedService.openFeed(options)));
 ipcMain.handle('feed:get', (_event, options) => withNotes(feedService.getFeed(options)));
 ipcMain.handle('feed:people', (_event, options) => feedService.getPeople(options));
+ipcMain.handle('feed:people-sort', (_event, sort) => feedService.setPeopleSort(sort));
 ipcMain.handle('feed:person-page', async (event, options) => withNotes(await feedService.getPersonPage({
   ...options,
   onProgress: progress => event.sender.send('feed:person-progress', {
@@ -1323,6 +1351,21 @@ ipcMain.handle('history:clear', () => {
 ipcMain.handle('feed:mute', (_event, user, muted) => {
   feedService.setMuted(user, muted);
   return true;
+});
+
+ipcMain.handle('favorites:list', () => favoriteTags());
+ipcMain.handle('favorites:add', (_event, name) => {
+  const tag = defaultTagSearchUrl(name);
+  return tag ? addFavoriteTag(tag) : { ok: false, message: '検索できるタグではありません。' };
+});
+ipcMain.handle('favorites:remove', (_event, name) => {
+  const current = favoriteTags();
+  const next = current.filter(item => item.name !== name);
+  if (next.length === current.length) return { ok: false, message: 'お気に入りタグを外せませんでした。' };
+  appStore.saveFavorites(next);
+  const result = { ok: true, items: next, message: `お気に入りタグを外しました: ${name}` };
+  sendToRenderer('favorites:changed', result);
+  return result;
 });
 
 // ---- 独自の名前・タグ・得点（DESIGN 4.8） ----

@@ -12,7 +12,8 @@ const NEW_TAG_LIMIT = 100;
 function userListUrl(me, kind, page = 1) {
   const name = encodeURIComponent(me);
   const path = kind === 'friends' ? 'friends' : 'subscriptions';
-  const query = kind === 'friends' || page > 1 ? `?page=${page}` : '';
+  // サイトの「最近の友達」順（o=invite_date）を保存して使う。成立日時と同一かは未確認。
+  const query = kind === 'friends' ? (page > 1 ? `?page=${page}&o=invite_date` : '?o=invite_date') : page > 1 ? `?page=${page}` : '';
   return `${SITE_ORIGIN}/user/${name}/${path}${query}`;
 }
 
@@ -105,7 +106,9 @@ function normalizeState(value) {
     ...state,
     watched: [...new Set(asArray(state.watched).filter(validId))],
     muted: uniqueUsers(state.muted),
-    lastOpenedAt: Number.isFinite(state.lastOpenedAt) ? state.lastOpenedAt : null
+    lastOpenedAt: Number.isFinite(state.lastOpenedAt) ? state.lastOpenedAt : null,
+    friendOrder: uniqueUsers(state.friendOrder),
+    peopleSort: ['unread', 'name', 'friend-new', 'friend-old'].includes(state.peopleSort) ? state.peopleSort : 'unread'
   };
 }
 
@@ -215,6 +218,8 @@ class FeedService {
       const avatars = {};
       const friends = await this.fetchList(me, 'friends', avatars);
       const subscriptions = includeSubscriptions ? await this.fetchList(me, 'subscriptions', avatars) : [];
+      // 一覧の取得に成功した時点で順序を残す。続く動画取得が中断しても失わない。
+      this.saveState({ ...this.state(), me, friendOrder: friends });
       const friendSet = new Set(friends);
       const users = uniqueUsers([...friends, ...subscriptions]).map(user => ({
         user,
@@ -298,7 +303,7 @@ class FeedService {
     };
   }
 
-  getPeople({ includeSubscriptions = true, viewableOnly = true } = {}) {
+  getPeople({ includeSubscriptions = true, viewableOnly = true, sort } = {}) {
     const state = this.state();
     const all = this.videos({ includeSubscriptions }).filter(video => !viewableOnly || isViewable(video));
     const byUser = new Map();
@@ -313,7 +318,20 @@ class FeedService {
       if (!byUser.has(video.user)) byUser.set(video.user, { user: video.user, kind: video.kind, unread: 0, muted: state.muted.includes(video.user), avatar: video.avatar || null });
       if (isNew(video, state)) byUser.get(video.user).unread += 1;
     }
-    return [...byUser.values()].sort((a, b) => b.unread - a.unread || a.user.localeCompare(b.user, 'ja'));
+    const selectedSort = ['unread', 'name', 'friend-new', 'friend-old'].includes(sort) ? sort : state.peopleSort;
+    const rank = new Map(state.friendOrder.map((user, index) => [user, index]));
+    const recent = (a, b) => (rank.get(a.user) ?? Infinity) - (rank.get(b.user) ?? Infinity);
+    const orderedFriend = person => rank.has(person.user);
+    return [...byUser.values()].sort((a, b) => {
+      if (selectedSort === 'name') return a.user.localeCompare(b.user, 'ja');
+      if (selectedSort === 'friend-new' || selectedSort === 'friend-old') {
+        // 保存済みの友人順がある人だけを先に置く。購読者・古いキャッシュ上の未知ユーザーは末尾を名前順。
+        if (orderedFriend(a) !== orderedFriend(b)) return orderedFriend(a) ? -1 : 1;
+        if (orderedFriend(a)) return (selectedSort === 'friend-new' ? recent(a, b) : recent(b, a)) || a.user.localeCompare(b.user, 'ja');
+        return a.user.localeCompare(b.user, 'ja');
+      }
+      return b.unread - a.unread || a.user.localeCompare(b.user, 'ja');
+    });
   }
 
   findVideo(id) {
@@ -411,6 +429,13 @@ class FeedService {
     const users = new Set(state.muted);
     if (muted) users.add(user); else users.delete(user);
     this.saveState({ ...state, muted: [...users] });
+  }
+
+  setPeopleSort(sort) {
+    if (!['unread', 'name', 'friend-new', 'friend-old'].includes(sort)) return this.state().peopleSort;
+    const state = this.state();
+    this.saveState({ ...state, peopleSort: sort });
+    return sort;
   }
 
   async getPersonPage({ user, page = 1, viewableOnly = true, onProgress } = {}) {

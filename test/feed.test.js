@@ -154,7 +154,7 @@ test('視聴済み・ミュート・フィードを開いた時刻を state に�
   h.service.markWatched(12, false);
   h.service.setMuted('user-a', false);
 
-  assert.deepEqual(h.store.state(), { watched: [], muted: [], lastOpenedAt: 999 });
+  assert.deepEqual(h.store.state(), { watched: [], muted: [], lastOpenedAt: 999, friendOrder: [], peopleSort: 'unread' });
 });
 
 test('個人の100件ページは必要な古いサイトページだけ取得し、取得済みを保存する', async () => {
@@ -447,4 +447,35 @@ test('前回より新しい ID の動画は、推定投稿日に初めて取得�
   assert.equal(posted[8], now - 9 * 24 * 60 * 60 * 1000);
   // 初めて取得した人の動画は、相対表示から推定する
   assert.equal(posted[5], now - 2 * 24 * 60 * 60 * 1000);
+});
+
+test('友人の取得順を保存し、友人順の新旧では購読者と未知の人を末尾に置く', async () => {
+  const store = memoryStore({
+    state: { friendOrder: ['friend-new', 'friend-old'], peopleSort: 'friend-old' },
+    feedCache: {
+      'friend-new': { kind: 'friend', videos: [{ id: 4, user: 'friend-new', kind: 'friend' }] },
+      'friend-old': { kind: 'friend', videos: [{ id: 3, user: 'friend-old', kind: 'friend' }] },
+      'sub-user': { kind: 'subscription', videos: [{ id: 2, user: 'sub-user', kind: 'subscription' }] },
+      unknown: { kind: 'friend', videos: [{ id: 1, user: 'unknown', kind: 'friend' }] }
+    }
+  });
+  const h = harness({ store });
+  assert.deepEqual(h.service.getPeople({ viewableOnly: false }).map(person => person.user), ['friend-old', 'friend-new', 'sub-user', 'unknown']);
+  h.service.setPeopleSort('name');
+  assert.equal(store.state().peopleSort, 'name');
+  assert.deepEqual(h.service.getPeople({ viewableOnly: false }).map(person => person.user), ['friend-new', 'friend-old', 'sub-user', 'unknown']);
+});
+
+test('更新は最近の友達の取得順を保存し、新しい順にも使う', async () => {
+  const me = 'me';
+  const h = harness({
+    replies: {
+      [userListUrl(me, 'friends')]: { users: ['new-friend', 'old-friend'], lastPage: 1 },
+      [userVideosUrl('new-friend')]: { videos: [{ id: 2 }] },
+      [userVideosUrl('old-friend')]: { videos: [{ id: 1 }] }
+    }
+  });
+  await h.service.refresh({ me, includeSubscriptions: false });
+  assert.deepEqual(h.store.state().friendOrder, ['new-friend', 'old-friend']);
+  assert.deepEqual(h.service.getPeople({ sort: 'friend-new', viewableOnly: false }).map(person => person.user), ['new-friend', 'old-friend']);
 });

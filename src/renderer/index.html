@@ -14,22 +14,35 @@
   </div>
   <header>
     <span class="app-name">しこしこフレンズ探検隊.exe（ウィルスじゃないよ）</span>
+    <span id="app-notice" role="status" aria-live="polite"></span>
     <nav aria-label="画面">
       <button type="button" data-view="site" class="active"><span class="tab-icon" aria-hidden="true">🌐</span><span class="tab-label">サイト表示</span></button>
       <button type="button" data-view="feed"><span class="tab-icon" aria-hidden="true">📥</span><span class="tab-label">フィード</span></button>
       <button type="button" data-view="search"><span class="tab-icon" aria-hidden="true">🔎</span><span class="tab-label">検索</span></button>
       <button type="button" data-view="organized"><span class="tab-icon" aria-hidden="true">⭐</span><span class="tab-label">整理した動画</span></button>
+      <button type="button" data-view="favorites"><span class="tab-icon" aria-hidden="true">🏷</span><span class="tab-label">お気に入りタグ</span></button>
       <button type="button" data-view="history"><span class="tab-icon" aria-hidden="true">🕘</span><span class="tab-label">履歴</span></button>
       <button type="button" data-view="downloads"><span class="tab-icon" aria-hidden="true">⬇</span><span class="tab-label">ダウンロード</span></button>
       <button type="button" data-view="settings"><span class="tab-icon" aria-hidden="true">⚙</span><span class="tab-label">設定</span></button>
     </nav>
   </header>
+  <div id="release-notice" hidden role="status">
+    <span>今回の追加: タグ右クリックでお気に入り登録／友人一覧の並び順を選択できます。使い方は設定へ。</span>
+    <button type="button" id="release-notice-close" aria-label="閉じる" title="閉じる">×</button>
+  </div>
 
   <main>
     <section id="feed" hidden>
       <aside id="people-panel">
         <label class="visually-hidden" for="person-search">名前で絞り込み</label>
         <input id="person-search" type="search" placeholder="名前で絞り込み">
+        <label class="person-sort-label" for="person-sort">並び順</label>
+        <select id="person-sort">
+          <option value="unread">未読多い順</option>
+          <option value="name">名前順</option>
+          <option value="friend-new">友人になった順（新）</option>
+          <option value="friend-old">友人になった順（古）</option>
+        </select>
         <div id="people"></div>
       </aside>
       <div id="feed-content">
@@ -45,6 +58,15 @@
         <div id="feed-grid"></div>
         <div id="feed-pager-bottom" class="pager"></div>
       </div>
+    </section>
+
+    <section id="favorites" hidden>
+      <div class="favorites-tools">
+        <label class="visually-hidden" for="favorite-search">名前で絞り込み</label>
+        <input id="favorite-search" type="search" placeholder="タグ名で検索">
+        <span id="favorites-status" role="status"></span>
+      </div>
+      <div id="favorites-list"></div>
     </section>
 
     <section id="organized" hidden>
@@ -163,6 +185,14 @@
             <li><b>カードの投稿者（アイコン・名前）をクリック</b>すると、その投稿者だけの動画に切り替わります。</li>
             <li><b>カードを右クリック</b>すると「新しいタブで開く」を選べます。</li>
             <li>気になる動画は <b>★を直接クリック</b>、<b>✎で名前・独自タグ</b>を付けられます。</li>
+            <li>左上の<b>並び順</b>で未読数・名前・友人になった順を選べます。友人になった順は、更新後のサイト一覧の順で並びます。</li>
+          </ul>
+        </details>
+        <details class="help">
+          <summary>お気に入りタグ</summary>
+          <ul>
+            <li>動画カードのサイトタグ、またはサイト表示のタグ検索リンクを<b>右クリック</b>して「お気に入りタグに追加」を選べます。</li>
+            <li><b>お気に入りタグタブ</b>では名前で検索、不要なタグを外す、タグをクリックして元のサイト検索を開く操作ができます。</li>
           </ul>
         </details>
         <details class="help">
